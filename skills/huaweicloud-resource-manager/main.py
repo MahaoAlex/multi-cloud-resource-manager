@@ -29,6 +29,7 @@ from security_scanner import scan_security_groups
 from obs_scanner import scan_obs_buckets
 from ecs_monitor import monitor_ecs_instances
 from eip_scanner import scan_unattached_eips
+from cce_scanner import scan_cce_clusters
 from report_generator import ReportGenerator
 from rule_engine import RuleEngine
 
@@ -228,6 +229,32 @@ def scan_eips(regions: Optional[List[str]] = None) -> List[Dict[str, Any]]:
     return eips
 
 
+def scan_cce(
+    regions: Optional[List[str]] = None,
+    pod_threshold: int = 5
+) -> List[Dict[str, Any]]:
+    """
+    Scan CCE clusters for low utilization.
+    Identifies clusters with no pods or fewer than threshold pods.
+
+    Args:
+        regions: List of regions to scan
+        pod_threshold: Pod count threshold for low usage warning
+
+    Returns:
+        List of CCE clusters with utilization issues
+    """
+    if regions is None:
+        regions = get_regions_from_env()
+
+    logger.info(f"Starting CCE scan for {len(regions)} region(s)")
+
+    issues = scan_cce_clusters(regions, pod_threshold=pod_threshold)
+
+    logger.info(f"CCE scan complete. Found {len(issues)} cluster(s) with low utilization")
+    return issues
+
+
 # Lock for thread-safe logging
 _scan_lock = Lock()
 _scan_counter = 0
@@ -262,6 +289,7 @@ def _scan_single_region(region: str, vpc_max_workers: int = 3) -> Dict[str, Any]
         "security_issues": [],
         "obs_issues": [],
         "ecs_issues": [],
+        "cce_issues": [],
         "naming_violations": [],
         "unattached_eips": [],
         "summary": {},
@@ -311,13 +339,22 @@ def _scan_single_region(region: str, vpc_max_workers: int = 3) -> Dict[str, Any]
         eips = scan_unattached_eips([region])
         region_result["unattached_eips"].extend(eips)
 
+        # CCE scan
+        try:
+            cce_issues = scan_cce_clusters([region], pod_threshold=5)
+            region_result["cce_issues"].extend(cce_issues)
+        except Exception as e:
+            logger.warning(f"CCE scan failed for region {region}: {e}")
+            region_result["cce_issues"] = []
+
         # Update region summary
         region_result["summary"] = {
             "vpcs": len(region_result["vpc_analysis"]),
             "security_issues": len(sec_issues),
             "obs_issues": len(obs_issues),
             "ecs_issues": len(ecs_issues),
-            "unattached_eips": len(eips)
+            "unattached_eips": len(eips),
+            "cce_issues": len(region_result["cce_issues"])
         }
 
         logger.info(f"Completed scanning region: {region} "
@@ -369,6 +406,7 @@ def full_scan(
         "security_issues": [],
         "obs_issues": [],
         "ecs_issues": [],
+        "cce_issues": [],
         "unattached_eips": [],
         "naming_violations": [],
         "failed_regions": [],
@@ -407,6 +445,7 @@ def full_scan(
                     all_results["security_issues"].extend(region_result["security_issues"])
                     all_results["obs_issues"].extend(region_result["obs_issues"])
                     all_results["ecs_issues"].extend(region_result["ecs_issues"])
+                    all_results["cce_issues"].extend(region_result["cce_issues"])
                     all_results["naming_violations"].extend(region_result["naming_violations"])
                     all_results["unattached_eips"].extend(region_result["unattached_eips"])
                     all_results["summary_by_region"][region] = region_result["summary"]
@@ -428,7 +467,9 @@ def full_scan(
             if any(i.get("type") == "low_cpu_usage" for i in e.get("issues", []))
         ]),
         "unattached_eips": len(all_results["unattached_eips"]),
-        "naming_violations": len(all_results["naming_violations"])
+        "naming_violations": len(all_results["naming_violations"]),
+        "cce_clusters_low_utilization": len(all_results["cce_issues"]),
+        "cce_empty_clusters": len([c for c in all_results["cce_issues"] if c.get("node_count", 0) == 0])
     }
 
     all_results["duration_seconds"] = int(time.time() - start_time)
@@ -515,7 +556,7 @@ def main():
     parser.add_argument("--regions", help="Comma-separated regions or 'all'")
     parser.add_argument("--output", default="./reports", help="Output directory")
     parser.add_argument("--mode", choices=["manual", "scheduled"], default="manual")
-    parser.add_argument("--scan", choices=["vpc", "security", "obs", "ecs", "eip", "full"], default="full")
+    parser.add_argument("--scan", choices=["vpc", "security", "obs", "ecs", "eip", "cce", "full"], default="full")
 
     args = parser.parse_args()
 
@@ -543,6 +584,8 @@ def main():
         results = scan_ecs()
     elif args.scan == "eip":
         results = scan_eips()
+    elif args.scan == "cce":
+        results = scan_cce()
 
     print(json.dumps(results, indent=2, ensure_ascii=False))
 
