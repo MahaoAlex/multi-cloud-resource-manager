@@ -122,6 +122,38 @@ def get_current_proxy_config():
     }
 
 
+def ask_yes_no(question, default="yes"):
+    """
+    Ask a yes/no question and return the answer.
+
+    Args:
+        question: Question to ask
+        default: Default answer if user just presses Enter ("yes" or "no")
+
+    Returns:
+        bool: True for yes, False for no
+    """
+    valid = {"yes": True, "y": True, "no": False, "n": False}
+
+    if default == "yes":
+        prompt = " [Y/n] "
+    elif default == "no":
+        prompt = " [y/N] "
+    else:
+        prompt = " [y/n] "
+
+    while True:
+        choice = input(question + prompt).strip().lower()
+
+        if not choice:
+            return valid.get(default, True)
+
+        if choice in valid:
+            return valid[choice]
+
+        print("Please respond with 'yes' or 'no' (or 'y' or 'n').")
+
+
 def interactive_proxy_setup():
     """
     Run interactive proxy configuration.
@@ -134,18 +166,53 @@ def interactive_proxy_setup():
     print("Huawei Cloud CLI Proxy Configuration")
     print("=" * 60)
     print()
-    print("Configure proxy settings for hcloud CLI.")
-    print("Leave blank and press Enter to skip any setting.")
-    print()
 
     # Show current configuration
     current = get_current_proxy_config()
-    if any(current.values()):
-        print("Current configuration:")
+    has_existing = any(current.values())
+
+    if has_existing:
+        print("Current proxy configuration detected:")
         for key, value in current.items():
             if value:
                 print(f"  {key}: {value}")
         print()
+
+        # Ask if user wants to keep current settings
+        if ask_yes_no("Proxy is already configured. Do you want to reconfigure?", default="no"):
+            print()
+            pass  # Continue to configuration
+        else:
+            print()
+            print("Keeping existing proxy configuration.")
+            print("=" * 60)
+            return {
+                "success": True,
+                "configured": [],
+                "skipped": True,
+                "message": "User chose to keep existing configuration"
+            }
+    else:
+        # No existing proxy, ask if user needs it
+        print("Proxy configuration allows Huawei Cloud CLI to connect through")
+        print("a corporate or network proxy server.")
+        print()
+
+        if not ask_yes_no("Do you need to configure a proxy?", default="no"):
+            print()
+            print("No proxy will be configured.")
+            print("=" * 60)
+            return {
+                "success": True,
+                "configured": [],
+                "skipped": True,
+                "message": "User chose not to configure proxy"
+            }
+
+    print()
+    print("Configure proxy settings for hcloud CLI.")
+    print("Leave blank and press Enter to skip any setting.")
+    print()
 
     # Prompt for proxy settings
     http_proxy = input("HTTP_PROXY (e.g., http://proxy.company.com:8080): ").strip()
