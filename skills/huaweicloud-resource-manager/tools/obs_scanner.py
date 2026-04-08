@@ -10,6 +10,7 @@ Scans OBS buckets and objects for public access configurations including:
 import json
 import subprocess
 import logging
+import os
 from typing import List, Dict, Any, Optional
 
 # Configure logging
@@ -20,18 +21,89 @@ logger = logging.getLogger(__name__)
 PUBLIC_PERMISSIONS = ["public-read", "public-read-write"]
 
 
-def run_hcloud_command(command: List[str], region: str) -> Optional[Dict[str, Any]]:
+def get_credentials() -> Dict[str, str]:
+    """Get Huawei Cloud credentials from environment variables."""
+    return {
+        'access_key': os.environ.get('HWCLOUD_ACCESS_KEY', ''),
+        'secret_key': os.environ.get('HWCLOUD_SECRET_KEY', ''),
+        'project_id': os.environ.get('HWCLOUD_PROJECT_ID', '')
+    }
+
+
+def validate_env() -> None:
+    """Validate required environment variables."""
+    required = ['HWCLOUD_ACCESS_KEY', 'HWCLOUD_SECRET_KEY']
+    missing = [var for var in required if not os.environ.get(var)]
+    if missing:
+        raise ValueError(f"Missing required environment variables: {', '.join(missing)}")
+
+
+def parse_hcloud_output(stdout: str) -> Optional[Dict[str, Any]]:
+    """
+    Parse hcloud CLI output, filtering out API version warnings.
+
+    Args:
+        stdout: Raw stdout from hcloud command
+
+    Returns:
+        Parsed JSON response or None if parsing fails
+    """
+    try:
+        # Filter out warning lines and extract JSON
+        lines = stdout.strip().split('\n')
+        json_lines = []
+        for line in lines:
+            line = line.strip()
+            # Skip empty lines and API version warnings
+            if not line:
+                continue
+            if 'multi-version API' in line or line.startswith('List') or line.startswith('Get'):
+                continue
+            json_lines.append(line)
+
+        if not json_lines:
+            return None
+
+        json_content = '\n'.join(json_lines)
+        return json.loads(json_content)
+    except json.JSONDecodeError as e:
+        logger.error(f"Failed to parse JSON output: {e}")
+        logger.debug(f"Raw output: {stdout[:500]}")
+        return None
+
+
+def run_hcloud_command(
+    command: List[str],
+    region: str,
+    credentials: Optional[Dict[str, str]] = None
+) -> Optional[Dict[str, Any]]:
     """
     Execute hcloud CLI command and return parsed JSON output.
 
     Args:
         command: Command and arguments as list
         region: Region to query
+        credentials: Optional credentials dict
 
     Returns:
         Parsed JSON response or None if command fails
     """
-    full_command = ["hcloud"] + command + [f"--region={region}"]
+    if credentials is None:
+        credentials = get_credentials()
+
+    # Build command with proper CLI parameters
+    full_command = ["hcloud"] + command
+
+    # Add authentication parameters
+    if credentials.get('access_key'):
+        full_command.extend([f"--cli-access-key={credentials['access_key']}"])
+    if credentials.get('secret_key'):
+        full_command.extend([f"--cli-secret-key={credentials['secret_key']}"])
+    if credentials.get('project_id'):
+        full_command.extend([f"--cli-project-id={credentials['project_id']}"])
+
+    # Add region
+    full_command.extend([f"--cli-region={region}"])
 
     try:
         result = subprocess.run(
@@ -42,36 +114,40 @@ def run_hcloud_command(command: List[str], region: str) -> Optional[Dict[str, An
         )
 
         if result.returncode != 0:
-            logger.error(f"Command failed: {' '.join(full_command)}")
+            logger.error(f"Command failed: {' '.join(command)}")
             logger.error(f"Error: {result.stderr}")
             return None
 
-        return json.loads(result.stdout)
+        return parse_hcloud_output(result.stdout)
+
     except subprocess.TimeoutExpired:
-        logger.error(f"Command timeout: {' '.join(full_command)}")
-        return None
-    except json.JSONDecodeError as e:
-        logger.error(f"Failed to parse JSON output: {e}")
+        logger.error(f"Command timeout: {' '.join(command)}")
         return None
     except Exception as e:
         logger.error(f"Unexpected error running command: {e}")
         return None
 
 
-def get_bucket_acl(bucket_name: str, region: str) -> Optional[Dict[str, Any]]:
+def get_bucket_acl(
+    bucket_name: str,
+    region: str,
+    credentials: Optional[Dict[str, str]] = None
+) -> Optional[Dict[str, Any]]:
     """
     Get ACL for a specific bucket.
 
     Args:
         bucket_name: Name of the bucket
         region: Region name
+        credentials: Optional credentials dict
 
     Returns:
         Bucket ACL dictionary or None if failed
     """
     return run_hcloud_command(
-        ["obs", "GetBucketAcl", f"--bucket={bucket_name}"],
-        region
+        ["OBS", "GetBucketAcl", f"--bucket={bucket_name}"],
+        region,
+        credentials
     )
 
 
@@ -111,7 +187,12 @@ def check_bucket_public_access(bucket_acl: Dict[str, Any]) -> Optional[str]:
     return None
 
 
-def list_objects(bucket_name: str, region: str, max_keys: int = 100) -> List[Dict[str, Any]]:
+def list_objects(
+    bucket_name: str,
+    region: str,
+    max_keys: int = 100,
+    credentials: Optional[Dict[str, str]] = None
+) -> List[Dict[str, Any]]:
     """
     List objects in a bucket.
 
@@ -119,13 +200,15 @@ def list_objects(bucket_name: str, region: str, max_keys: int = 100) -> List[Dic
         bucket_name: Name of the bucket
         region: Region name
         max_keys: Maximum number of objects to list
+        credentials: Optional credentials dict
 
     Returns:
         List of object dictionaries
     """
     response = run_hcloud_command(
-        ["obs", "ListObjects", f"--bucket={bucket_name}", f"--max-keys={max_keys}"],
-        region
+        ["OBS", "ListObjects", f"--bucket={bucket_name}", f"--max-keys={max_keys}"],
+        region,
+        credentials
     )
 
     if not response:
@@ -140,7 +223,12 @@ def list_objects(bucket_name: str, region: str, max_keys: int = 100) -> List[Dic
     return []
 
 
-def get_object_acl(bucket_name: str, object_key: str, region: str) -> Optional[Dict[str, Any]]:
+def get_object_acl(
+    bucket_name: str,
+    object_key: str,
+    region: str,
+    credentials: Optional[Dict[str, str]] = None
+) -> Optional[Dict[str, Any]]:
     """
     Get ACL for a specific object.
 
@@ -148,13 +236,15 @@ def get_object_acl(bucket_name: str, object_key: str, region: str) -> Optional[D
         bucket_name: Name of the bucket
         object_key: Object key (path)
         region: Region name
+        credentials: Optional credentials dict
 
     Returns:
         Object ACL dictionary or None if failed
     """
     return run_hcloud_command(
-        ["obs", "GetObjectAcl", f"--bucket={bucket_name}", f"--key={object_key}"],
-        region
+        ["OBS", "GetObjectAcl", f"--bucket={bucket_name}", f"--key={object_key}"],
+        region,
+        credentials
     )
 
 
@@ -194,7 +284,12 @@ def check_object_public_access(object_acl: Dict[str, Any]) -> Optional[str]:
     return None
 
 
-def scan_bucket_objects(bucket_name: str, region: str, max_objects: int = 100) -> List[Dict[str, Any]]:
+def scan_bucket_objects(
+    bucket_name: str,
+    region: str,
+    max_objects: int = 100,
+    credentials: Optional[Dict[str, str]] = None
+) -> List[Dict[str, Any]]:
     """
     Scan objects in a bucket for public access.
 
@@ -202,20 +297,21 @@ def scan_bucket_objects(bucket_name: str, region: str, max_objects: int = 100) -
         bucket_name: Name of the bucket
         region: Region name
         max_objects: Maximum number of objects to check
+        credentials: Optional credentials dict
 
     Returns:
         List of public objects
     """
     public_objects = []
 
-    objects = list_objects(bucket_name, region, max_objects)
+    objects = list_objects(bucket_name, region, max_objects, credentials)
 
     for obj in objects:
         object_key = obj.get("key", "")
         if not object_key:
             continue
 
-        object_acl = get_object_acl(bucket_name, object_key, region)
+        object_acl = get_object_acl(bucket_name, object_key, region, credentials)
         public_permission = check_object_public_access(object_acl)
 
         if public_permission:
@@ -229,7 +325,12 @@ def scan_bucket_objects(bucket_name: str, region: str, max_objects: int = 100) -
     return public_objects
 
 
-def scan_bucket(bucket: Dict[str, Any], region: str, check_objects: bool = True) -> Optional[Dict[str, Any]]:
+def scan_bucket(
+    bucket: Dict[str, Any],
+    region: str,
+    check_objects: bool = True,
+    credentials: Optional[Dict[str, str]] = None
+) -> Optional[Dict[str, Any]]:
     """
     Scan a single bucket for public access issues.
 
@@ -237,6 +338,7 @@ def scan_bucket(bucket: Dict[str, Any], region: str, check_objects: bool = True)
         bucket: Bucket dictionary
         region: Region name
         check_objects: Whether to check individual objects
+        credentials: Optional credentials dict
 
     Returns:
         Issue details if public access found, None otherwise
@@ -246,7 +348,7 @@ def scan_bucket(bucket: Dict[str, Any], region: str, check_objects: bool = True)
         return None
 
     # Get bucket ACL
-    bucket_acl = get_bucket_acl(bucket_name, region)
+    bucket_acl = get_bucket_acl(bucket_name, region, credentials)
     bucket_permission = check_bucket_public_access(bucket_acl)
 
     issue = None
@@ -264,7 +366,7 @@ def scan_bucket(bucket: Dict[str, Any], region: str, check_objects: bool = True)
 
     # Check individual objects if bucket is not public or for detailed reporting
     if check_objects:
-        public_objects = scan_bucket_objects(bucket_name, region)
+        public_objects = scan_bucket_objects(bucket_name, region, credentials=credentials)
 
         if public_objects:
             if issue:
@@ -285,17 +387,21 @@ def scan_bucket(bucket: Dict[str, Any], region: str, check_objects: bool = True)
     return issue
 
 
-def list_buckets(region: str) -> List[Dict[str, Any]]:
+def list_buckets(
+    region: str,
+    credentials: Optional[Dict[str, str]] = None
+) -> List[Dict[str, Any]]:
     """
     List all OBS buckets in a region.
 
     Args:
         region: Region name
+        credentials: Optional credentials dict
 
     Returns:
         List of bucket dictionaries
     """
-    response = run_hcloud_command(["obs", "ListBuckets"], region)
+    response = run_hcloud_command(["OBS", "ListBuckets"], region, credentials)
 
     if not response:
         return []
@@ -309,17 +415,32 @@ def list_buckets(region: str) -> List[Dict[str, Any]]:
     return []
 
 
-def scan_obs_buckets(regions: List[str], check_objects: bool = True) -> List[Dict[str, Any]]:
+def scan_obs_buckets(
+    regions: List[str],
+    check_objects: bool = True,
+    credentials: Optional[Dict[str, str]] = None
+) -> List[Dict[str, Any]]:
     """
     Scan OBS buckets across multiple regions for public access.
 
     Args:
         regions: List of region names to scan
         check_objects: Whether to check individual object ACLs
+        credentials: Optional credentials dict
 
     Returns:
         List of OBS issues found across all regions
     """
+    # Validate environment before starting
+    try:
+        validate_env()
+    except ValueError as e:
+        logger.error(f"Environment validation failed: {e}")
+        raise
+
+    if credentials is None:
+        credentials = get_credentials()
+
     all_issues = []
 
     logger.info(f"Starting OBS scan for {len(regions)} region(s)")
@@ -328,7 +449,7 @@ def scan_obs_buckets(regions: List[str], check_objects: bool = True) -> List[Dic
         logger.info(f"Scanning OBS in region: {region}")
 
         try:
-            buckets = list_buckets(region)
+            buckets = list_buckets(region, credentials)
 
             if not buckets:
                 logger.info(f"No OBS buckets found in region {region}")
@@ -337,7 +458,7 @@ def scan_obs_buckets(regions: List[str], check_objects: bool = True) -> List[Dic
             logger.info(f"Found {len(buckets)} bucket(s) in {region}")
 
             for bucket in buckets:
-                issue = scan_bucket(bucket, region, check_objects)
+                issue = scan_bucket(bucket, region, check_objects, credentials)
 
                 if issue:
                     all_issues.append(issue)

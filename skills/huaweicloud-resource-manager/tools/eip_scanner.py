@@ -7,14 +7,71 @@ Detects unattached Elastic IPs that may be wasting resources.
 import os
 import subprocess
 import json
-from typing import List, Dict, Any
+import logging
+from typing import List, Dict, Any, Optional
+
+# Configure logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
+
+
+def get_credentials() -> Dict[str, str]:
+    """Get Huawei Cloud credentials from environment variables."""
+    return {
+        'access_key': os.environ.get('HWCLOUD_ACCESS_KEY', ''),
+        'secret_key': os.environ.get('HWCLOUD_SECRET_KEY', ''),
+        'project_id': os.environ.get('HWCLOUD_PROJECT_ID', '')
+    }
+
+
+def validate_env() -> None:
+    """Validate required environment variables."""
+    required = ['HWCLOUD_ACCESS_KEY', 'HWCLOUD_SECRET_KEY']
+    missing = [var for var in required if not os.environ.get(var)]
+    if missing:
+        raise ValueError(f"Missing required environment variables: {', '.join(missing)}")
+
+
+def parse_hcloud_output(stdout: str) -> Optional[Dict[str, Any]]:
+    """
+    Parse hcloud CLI output, filtering out API version warnings.
+
+    Args:
+        stdout: Raw stdout from hcloud command
+
+    Returns:
+        Parsed JSON response or None if parsing fails
+    """
+    try:
+        # Filter out warning lines and extract JSON
+        lines = stdout.strip().split('\n')
+        json_lines = []
+        for line in lines:
+            line = line.strip()
+            # Skip empty lines and API version warnings
+            if not line:
+                continue
+            if 'multi-version API' in line or line.startswith('List'):
+                continue
+            json_lines.append(line)
+
+        if not json_lines:
+            return None
+
+        json_content = '\n'.join(json_lines)
+        return json.loads(json_content)
+    except json.JSONDecodeError as e:
+        logger.error(f"Failed to parse JSON output: {e}")
+        logger.debug(f"Raw output: {stdout[:500]}")
+        return None
 
 
 def run_hcloud_command(
     service: str,
     action: str,
     region: str,
-    args: List[str] = None
+    args: List[str] = None,
+    credentials: Optional[Dict[str, str]] = None
 ) -> Dict[str, Any]:
     """
     Execute hcloud CLI command and return parsed JSON response.
@@ -24,31 +81,42 @@ def run_hcloud_command(
         action: Action to perform (ListPublicips, etc.)
         region: Region ID
         args: Additional command arguments
+        credentials: Optional credentials dict
 
     Returns:
         dict: Parsed JSON response or error info
     """
+    if credentials is None:
+        credentials = get_credentials()
+
     cmd = ['hcloud', service, action]
     if args:
         cmd.extend(args)
 
-    try:
-        env = os.environ.copy()
-        env['HWCLOUD_REGION'] = region
+    # Add authentication parameters
+    if credentials.get('access_key'):
+        cmd.extend([f"--cli-access-key={credentials['access_key']}"])
+    if credentials.get('secret_key'):
+        cmd.extend([f"--cli-secret-key={credentials['secret_key']}"])
+    if credentials.get('project_id'):
+        cmd.extend([f"--cli-project-id={credentials['project_id']}"])
 
+    # Add region
+    cmd.extend([f"--cli-region={region}"])
+
+    try:
         result = subprocess.run(
             cmd,
-            env=env,
             capture_output=True,
             text=True,
             timeout=60
         )
 
         if result.returncode == 0:
-            try:
-                return json.loads(result.stdout)
-            except json.JSONDecodeError:
-                return {"error": "Invalid JSON response", "raw": result.stdout}
+            parsed = parse_hcloud_output(result.stdout)
+            if parsed is not None:
+                return parsed
+            return {"error": "Invalid JSON response", "raw": result.stdout[:500]}
 
         return {
             "error": result.stderr.strip() or "Command failed",
@@ -63,19 +131,21 @@ def run_hcloud_command(
         return {"error": str(e)}
 
 
-def get_eips(region: str) -> List[Dict[str, Any]]:
+def get_eips(region: str, credentials: Optional[Dict[str, str]] = None) -> List[Dict[str, Any]]:
     """
     List all Elastic IPs in a region.
 
     Args:
         region: Region ID
+        credentials: Optional credentials dict
 
     Returns:
         list: List of EIP dictionaries
     """
-    response = run_hcloud_command('eip', 'ListPublicips', region)
+    response = run_hcloud_command('EIP', 'ListPublicips', region, credentials=credentials)
 
     if 'error' in response:
+        logger.warning(f"Failed to get EIPs: {response.get('error')}")
         return []
 
     # Extract publicips from response
@@ -148,28 +218,42 @@ def extract_eip_info(eip: Dict[str, Any], region: str) -> Dict[str, Any]:
     return result
 
 
-def scan_unattached_eips(regions: List[str]) -> List[Dict[str, Any]]:
+def scan_unattached_eips(
+    regions: List[str],
+    credentials: Optional[Dict[str, str]] = None
+) -> List[Dict[str, Any]]:
     """
     Scan for unattached EIPs across multiple regions.
 
     Args:
         regions: List of region IDs to scan
+        credentials: Optional credentials dict
 
     Returns:
         list: List of unattached EIP information
     """
+    # Validate environment before starting
+    try:
+        validate_env()
+    except ValueError as e:
+        logger.error(f"Environment validation failed: {e}")
+        raise
+
+    if credentials is None:
+        credentials = get_credentials()
+
     unattached_eips = []
 
     for region in regions:
-        print(f"  Scanning EIPs in region: {region}")
+        logger.info(f"Scanning EIPs in region: {region}")
 
-        eips = get_eips(region)
+        eips = get_eips(region, credentials)
 
         if not eips:
-            print(f"    No EIPs found or error occurred")
+            logger.info(f"No EIPs found in {region}")
             continue
 
-        print(f"    Found {len(eips)} EIPs")
+        logger.info(f"Found {len(eips)} EIPs in {region}")
 
         unattached_count = 0
         for eip in eips:
@@ -179,7 +263,7 @@ def scan_unattached_eips(regions: List[str]) -> List[Dict[str, Any]]:
                 unattached_count += 1
 
         if unattached_count > 0:
-            print(f"    Found {unattached_count} unattached EIPs")
+            logger.info(f"Found {unattached_count} unattached EIPs in {region}")
 
     return unattached_eips
 

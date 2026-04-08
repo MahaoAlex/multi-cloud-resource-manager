@@ -20,18 +20,89 @@ logger = logging.getLogger(__name__)
 DEFAULT_PAGE_SIZE = 100
 
 
-def run_hcloud_command(command: List[str], region: str) -> Optional[Dict[str, Any]]:
+def get_credentials() -> Dict[str, str]:
+    """Get Huawei Cloud credentials from environment variables."""
+    return {
+        'access_key': os.environ.get('HWCLOUD_ACCESS_KEY', ''),
+        'secret_key': os.environ.get('HWCLOUD_SECRET_KEY', ''),
+        'project_id': os.environ.get('HWCLOUD_PROJECT_ID', '')
+    }
+
+
+def validate_env() -> None:
+    """Validate required environment variables."""
+    required = ['HWCLOUD_ACCESS_KEY', 'HWCLOUD_SECRET_KEY']
+    missing = [var for var in required if not os.environ.get(var)]
+    if missing:
+        raise ValueError(f"Missing required environment variables: {', '.join(missing)}")
+
+
+def parse_hcloud_output(stdout: str) -> Optional[Dict[str, Any]]:
+    """
+    Parse hcloud CLI output, filtering out API version warnings.
+
+    Args:
+        stdout: Raw stdout from hcloud command
+
+    Returns:
+        Parsed JSON response or None if parsing fails
+    """
+    try:
+        # Filter out warning lines and extract JSON
+        lines = stdout.strip().split('\n')
+        json_lines = []
+        for line in lines:
+            line = line.strip()
+            # Skip empty lines and API version warnings
+            if not line:
+                continue
+            if 'multi-version API' in line or line.startswith('List'):
+                continue
+            json_lines.append(line)
+
+        if not json_lines:
+            return None
+
+        json_content = '\n'.join(json_lines)
+        return json.loads(json_content)
+    except json.JSONDecodeError as e:
+        logger.error(f"Failed to parse JSON output: {e}")
+        logger.debug(f"Raw output: {stdout[:500]}")
+        return None
+
+
+def run_hcloud_command(
+    command: List[str],
+    region: str,
+    credentials: Optional[Dict[str, str]] = None
+) -> Optional[Dict[str, Any]]:
     """
     Execute hcloud CLI command and return parsed JSON output.
 
     Args:
         command: Command and arguments as list
         region: Region to query
+        credentials: Optional credentials dict (access_key, secret_key, project_id)
 
     Returns:
         Parsed JSON response or None if command fails
     """
-    full_command = ["hcloud"] + command + [f"--region={region}"]
+    if credentials is None:
+        credentials = get_credentials()
+
+    # Build command with proper CLI parameters
+    full_command = ["hcloud"] + command
+
+    # Add authentication parameters
+    if credentials.get('access_key'):
+        full_command.extend([f"--cli-access-key={credentials['access_key']}"])
+    if credentials.get('secret_key'):
+        full_command.extend([f"--cli-secret-key={credentials['secret_key']}"])
+    if credentials.get('project_id'):
+        full_command.extend([f"--cli-project-id={credentials['project_id']}"])
+
+    # Add region
+    full_command.extend([f"--cli-region={region}"])
 
     try:
         result = subprocess.run(
@@ -42,28 +113,31 @@ def run_hcloud_command(command: List[str], region: str) -> Optional[Dict[str, An
         )
 
         if result.returncode != 0:
-            logger.error(f"Command failed: {' '.join(full_command)}")
+            logger.error(f"Command failed: {' '.join(command)}")
             logger.error(f"Error: {result.stderr}")
             return None
 
-        return json.loads(result.stdout)
+        return parse_hcloud_output(result.stdout)
+
     except subprocess.TimeoutExpired:
-        logger.error(f"Command timeout: {' '.join(full_command)}")
-        return None
-    except json.JSONDecodeError as e:
-        logger.error(f"Failed to parse JSON output: {e}")
+        logger.error(f"Command timeout: {' '.join(command)}")
         return None
     except Exception as e:
         logger.error(f"Unexpected error running command: {e}")
         return None
 
 
-def get_vpcs_in_region(region: str, page_size: int = DEFAULT_PAGE_SIZE) -> List[Dict[str, Any]]:
+def get_vpcs_in_region(
+    region: str,
+    credentials: Optional[Dict[str, str]] = None,
+    page_size: int = DEFAULT_PAGE_SIZE
+) -> List[Dict[str, Any]]:
     """
     Get all VPCs in a specific region with pagination support.
 
     Args:
         region: Region name
+        credentials: Optional credentials dict
         page_size: Number of items per page
 
     Returns:
@@ -73,15 +147,18 @@ def get_vpcs_in_region(region: str, page_size: int = DEFAULT_PAGE_SIZE) -> List[
     marker = None
     page_count = 0
 
+    if credentials is None:
+        credentials = get_credentials()
+
     while True:
         page_count += 1
-        command = ["vpc", "ListVpcs", f"--limit={page_size}"]
+        command = ["VPC", "ListVpcs", f"--limit={page_size}"]
 
         if marker:
             command.append(f"--marker={marker}")
 
         logger.debug(f"Fetching VPCs from {region}, page {page_count}")
-        response = run_hcloud_command(command, region)
+        response = run_hcloud_command(command, region, credentials)
 
         if not response:
             logger.warning(f"Failed to get VPCs from region {region}")
@@ -153,6 +230,14 @@ def get_vpc_inventory(regions: List[str]) -> Dict[str, Any]:
     Returns:
         Dictionary containing VPC inventory data
     """
+    # Validate environment before starting
+    try:
+        validate_env()
+    except ValueError as e:
+        logger.error(f"Environment validation failed: {e}")
+        raise
+
+    credentials = get_credentials()
     all_vpcs = []
     regions_scanned = []
     failed_regions = []
@@ -163,7 +248,7 @@ def get_vpc_inventory(regions: List[str]) -> Dict[str, Any]:
         logger.info(f"[{index}/{len(regions)}] Scanning region: {region}")
 
         try:
-            vpcs = get_vpcs_in_region(region)
+            vpcs = get_vpcs_in_region(region, credentials)
 
             if vpcs:
                 formatted_vpcs = [format_vpc_data(vpc) for vpc in vpcs]

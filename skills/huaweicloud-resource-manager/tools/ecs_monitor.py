@@ -8,15 +8,72 @@ import os
 import subprocess
 import json
 import re
+import logging
 from datetime import datetime, timedelta
 from typing import List, Dict, Optional, Any
+
+# Configure logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
+
+
+def get_credentials() -> Dict[str, str]:
+    """Get Huawei Cloud credentials from environment variables."""
+    return {
+        'access_key': os.environ.get('HWCLOUD_ACCESS_KEY', ''),
+        'secret_key': os.environ.get('HWCLOUD_SECRET_KEY', ''),
+        'project_id': os.environ.get('HWCLOUD_PROJECT_ID', '')
+    }
+
+
+def validate_env() -> None:
+    """Validate required environment variables."""
+    required = ['HWCLOUD_ACCESS_KEY', 'HWCLOUD_SECRET_KEY']
+    missing = [var for var in required if not os.environ.get(var)]
+    if missing:
+        raise ValueError(f"Missing required environment variables: {', '.join(missing)}")
+
+
+def parse_hcloud_output(stdout: str) -> Optional[Dict[str, Any]]:
+    """
+    Parse hcloud CLI output, filtering out API version warnings.
+
+    Args:
+        stdout: Raw stdout from hcloud command
+
+    Returns:
+        Parsed JSON response or None if parsing fails
+    """
+    try:
+        # Filter out warning lines and extract JSON
+        lines = stdout.strip().split('\n')
+        json_lines = []
+        for line in lines:
+            line = line.strip()
+            # Skip empty lines and API version warnings
+            if not line:
+                continue
+            if 'multi-version API' in line or line.startswith('List') or line.startswith('Nova'):
+                continue
+            json_lines.append(line)
+
+        if not json_lines:
+            return None
+
+        json_content = '\n'.join(json_lines)
+        return json.loads(json_content)
+    except json.JSONDecodeError as e:
+        logger.error(f"Failed to parse JSON output: {e}")
+        logger.debug(f"Raw output: {stdout[:500]}")
+        return None
 
 
 def run_hcloud_command(
     service: str,
     action: str,
     region: str,
-    args: List[str] = None
+    args: List[str] = None,
+    credentials: Optional[Dict[str, str]] = None
 ) -> Dict[str, Any]:
     """
     Execute hcloud CLI command and return parsed JSON response.
@@ -26,31 +83,42 @@ def run_hcloud_command(
         action: Action to perform (ListServers, ListMetrics, etc.)
         region: Region ID
         args: Additional command arguments
+        credentials: Optional credentials dict
 
     Returns:
         dict: Parsed JSON response or error info
     """
+    if credentials is None:
+        credentials = get_credentials()
+
     cmd = ['hcloud', service, action]
     if args:
         cmd.extend(args)
 
-    try:
-        env = os.environ.copy()
-        env['HWCLOUD_REGION'] = region
+    # Add authentication parameters
+    if credentials.get('access_key'):
+        cmd.extend([f"--cli-access-key={credentials['access_key']}"])
+    if credentials.get('secret_key'):
+        cmd.extend([f"--cli-secret-key={credentials['secret_key']}"])
+    if credentials.get('project_id'):
+        cmd.extend([f"--cli-project-id={credentials['project_id']}"])
 
+    # Add region
+    cmd.extend([f"--cli-region={region}"])
+
+    try:
         result = subprocess.run(
             cmd,
-            env=env,
             capture_output=True,
             text=True,
             timeout=60
         )
 
         if result.returncode == 0:
-            try:
-                return json.loads(result.stdout)
-            except json.JSONDecodeError:
-                return {"error": "Invalid JSON response", "raw": result.stdout}
+            parsed = parse_hcloud_output(result.stdout)
+            if parsed is not None:
+                return parsed
+            return {"error": "Invalid JSON response", "raw": result.stdout[:500]}
 
         return {
             "error": result.stderr.strip() or "Command failed",
@@ -65,26 +133,25 @@ def run_hcloud_command(
         return {"error": str(e)}
 
 
-def get_ecs_instances(region: str) -> List[Dict[str, Any]]:
+def get_ecs_instances(region: str, credentials: Optional[Dict[str, str]] = None) -> List[Dict[str, Any]]:
     """
     List all ECS instances in a region.
 
     Args:
         region: Region ID
+        credentials: Optional credentials dict
 
     Returns:
         list: List of ECS instance dictionaries
     """
-    response = run_hcloud_command('ecs', 'ListServers', region)
+    response = run_hcloud_command('ECS', 'NovaListServers', region, credentials=credentials)
 
     if 'error' in response:
+        logger.warning(f"Failed to get ECS instances: {response.get('error')}")
         return []
 
     # Extract servers from response
     servers = response.get('servers', [])
-    if not servers and 'servers' in str(response):
-        # Try alternative response format
-        servers = response.get('servers', [])
 
     # Add region to each server
     for server in servers:
@@ -96,7 +163,8 @@ def get_ecs_instances(region: str) -> List[Dict[str, Any]]:
 def get_cpu_metrics(
     region: str,
     instance_id: str,
-    days: int = 1
+    days: int = 1,
+    credentials: Optional[Dict[str, str]] = None
 ) -> Optional[Dict[str, Any]]:
     """
     Get CPU utilization metrics for an ECS instance.
@@ -105,6 +173,7 @@ def get_cpu_metrics(
         region: Region ID
         instance_id: ECS instance ID
         days: Number of days to query (default 1)
+        credentials: Optional credentials dict
 
     Returns:
         dict: Metric data or None if failed
@@ -118,11 +187,17 @@ def get_cpu_metrics(
     to_time = end_time.strftime('%Y-%m-%dT%H:%M:%SZ')
 
     # First, list metrics to get the correct metric name
+    list_args = [
+        '--namespace', 'SYS.ECS',
+        '--dim.0', f'instance_id,{instance_id}'
+    ]
+
     list_response = run_hcloud_command(
-        'ces',
+        'CES',
         'ListMetrics',
         region,
-        ['--namespace', 'SYS.ECS', '--dim.0', f'instance_id,{instance_id}']
+        list_args,
+        credentials
     )
 
     if 'error' in list_response:
@@ -151,10 +226,11 @@ def get_cpu_metrics(
     ]
 
     data_response = run_hcloud_command(
-        'ces',
+        'CES',
         'ShowMetricData',
         region,
-        metric_args
+        metric_args,
+        credentials
     )
 
     if 'error' in data_response:
@@ -213,7 +289,9 @@ def check_naming_convention(name: str) -> bool:
 
 def analyze_ecs_instance(
     instance: Dict[str, Any],
-    region: str
+    region: str,
+    credentials: Optional[Dict[str, str]] = None,
+    cpu_threshold: float = 10.0
 ) -> Dict[str, Any]:
     """
     Analyze a single ECS instance for issues.
@@ -221,6 +299,8 @@ def analyze_ecs_instance(
     Args:
         instance: ECS instance data
         region: Region ID
+        credentials: Optional credentials dict
+        cpu_threshold: CPU utilization threshold for low usage warning
 
     Returns:
         dict: Analysis result with issues found
@@ -249,10 +329,10 @@ def analyze_ecs_instance(
         })
 
     # Check CPU utilization
-    metrics_data = get_cpu_metrics(region, instance_id)
+    metrics_data = get_cpu_metrics(region, instance_id, credentials=credentials)
     if metrics_data:
         avg_cpu = calculate_avg_cpu(metrics_data)
-        if avg_cpu is not None and avg_cpu < 10.0:
+        if avg_cpu is not None and avg_cpu < cpu_threshold:
             result["issues"].append({
                 "type": "low_cpu_usage",
                 "severity": "info",
@@ -264,31 +344,49 @@ def analyze_ecs_instance(
     return result
 
 
-def monitor_ecs_instances(regions: List[str]) -> List[Dict[str, Any]]:
+def monitor_ecs_instances(
+    regions: List[str],
+    cpu_threshold: float = 10.0,
+    check_naming: bool = True,
+    credentials: Optional[Dict[str, str]] = None
+) -> List[Dict[str, Any]]:
     """
     Monitor ECS instances across multiple regions.
 
     Args:
         regions: List of region IDs to scan
+        cpu_threshold: CPU utilization threshold for low usage warning
+        check_naming: Whether to check naming convention compliance
+        credentials: Optional credentials dict
 
     Returns:
         list: List of ECS instances with issues
     """
+    # Validate environment before starting
+    try:
+        validate_env()
+    except ValueError as e:
+        logger.error(f"Environment validation failed: {e}")
+        raise
+
+    if credentials is None:
+        credentials = get_credentials()
+
     all_issues = []
 
     for region in regions:
-        print(f"  Scanning ECS in region: {region}")
+        logger.info(f"Scanning ECS in region: {region}")
 
-        instances = get_ecs_instances(region)
+        instances = get_ecs_instances(region, credentials)
 
         if not instances:
-            print(f"    No ECS instances found or error occurred")
+            logger.info(f"No ECS instances found in {region}")
             continue
 
-        print(f"    Found {len(instances)} ECS instances")
+        logger.info(f"Found {len(instances)} ECS instances in {region}")
 
         for instance in instances:
-            analysis = analyze_ecs_instance(instance, region)
+            analysis = analyze_ecs_instance(instance, region, credentials, cpu_threshold)
 
             # Only include instances with issues
             if analysis["issues"]:

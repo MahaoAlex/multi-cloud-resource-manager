@@ -10,6 +10,7 @@ Scans security groups for high-risk configurations including:
 import json
 import subprocess
 import logging
+import os
 from typing import List, Dict, Any, Optional
 
 # Configure logging
@@ -17,24 +18,95 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 logger = logging.getLogger(__name__)
 
 # High-risk ports to check
-HIGH_RISK_PORTS = [22, 33, 44]
+HIGH_RISK_PORTS = [22, 33, 44, 3389, 3306, 5432, 6379, 1433]
 
 # High-risk remote IPs (open to internet)
 HIGH_RISK_REMOTE_IPS = ["0.0.0.0/0", "::/0"]
 
 
-def run_hcloud_command(command: List[str], region: str) -> Optional[Dict[str, Any]]:
+def get_credentials() -> Dict[str, str]:
+    """Get Huawei Cloud credentials from environment variables."""
+    return {
+        'access_key': os.environ.get('HWCLOUD_ACCESS_KEY', ''),
+        'secret_key': os.environ.get('HWCLOUD_SECRET_KEY', ''),
+        'project_id': os.environ.get('HWCLOUD_PROJECT_ID', '')
+    }
+
+
+def validate_env() -> None:
+    """Validate required environment variables."""
+    required = ['HWCLOUD_ACCESS_KEY', 'HWCLOUD_SECRET_KEY']
+    missing = [var for var in required if not os.environ.get(var)]
+    if missing:
+        raise ValueError(f"Missing required environment variables: {', '.join(missing)}")
+
+
+def parse_hcloud_output(stdout: str) -> Optional[Dict[str, Any]]:
+    """
+    Parse hcloud CLI output, filtering out API version warnings.
+
+    Args:
+        stdout: Raw stdout from hcloud command
+
+    Returns:
+        Parsed JSON response or None if parsing fails
+    """
+    try:
+        # Filter out warning lines and extract JSON
+        lines = stdout.strip().split('\n')
+        json_lines = []
+        for line in lines:
+            line = line.strip()
+            # Skip empty lines and API version warnings
+            if not line:
+                continue
+            if 'multi-version API' in line or line.startswith('List'):
+                continue
+            json_lines.append(line)
+
+        if not json_lines:
+            return None
+
+        json_content = '\n'.join(json_lines)
+        return json.loads(json_content)
+    except json.JSONDecodeError as e:
+        logger.error(f"Failed to parse JSON output: {e}")
+        logger.debug(f"Raw output: {stdout[:500]}")
+        return None
+
+
+def run_hcloud_command(
+    command: List[str],
+    region: str,
+    credentials: Optional[Dict[str, str]] = None
+) -> Optional[Dict[str, Any]]:
     """
     Execute hcloud CLI command and return parsed JSON output.
 
     Args:
         command: Command and arguments as list
         region: Region to query
+        credentials: Optional credentials dict
 
     Returns:
         Parsed JSON response or None if command fails
     """
-    full_command = ["hcloud"] + command + [f"--region={region}"]
+    if credentials is None:
+        credentials = get_credentials()
+
+    # Build command with proper CLI parameters
+    full_command = ["hcloud"] + command
+
+    # Add authentication parameters
+    if credentials.get('access_key'):
+        full_command.extend([f"--cli-access-key={credentials['access_key']}"])
+    if credentials.get('secret_key'):
+        full_command.extend([f"--cli-secret-key={credentials['secret_key']}"])
+    if credentials.get('project_id'):
+        full_command.extend([f"--cli-project-id={credentials['project_id']}"])
+
+    # Add region
+    full_command.extend([f"--cli-region={region}"])
 
     try:
         result = subprocess.run(
@@ -45,16 +117,14 @@ def run_hcloud_command(command: List[str], region: str) -> Optional[Dict[str, An
         )
 
         if result.returncode != 0:
-            logger.error(f"Command failed: {' '.join(full_command)}")
+            logger.error(f"Command failed: {' '.join(command)}")
             logger.error(f"Error: {result.stderr}")
             return None
 
-        return json.loads(result.stdout)
+        return parse_hcloud_output(result.stdout)
+
     except subprocess.TimeoutExpired:
-        logger.error(f"Command timeout: {' '.join(full_command)}")
-        return None
-    except json.JSONDecodeError as e:
-        logger.error(f"Failed to parse JSON output: {e}")
+        logger.error(f"Command timeout: {' '.join(command)}")
         return None
     except Exception as e:
         logger.error(f"Unexpected error running command: {e}")
@@ -73,13 +143,13 @@ def parse_port_range(port_range: str) -> List[int]:
     """
     ports = []
 
-    if not port_range or port_range.lower() == "any":
+    if not port_range or port_range.lower() in ["any", "", None]:
         # If port is 'any', it means all ports
         return list(range(1, 65536))
 
-    if "-" in port_range:
+    if "-" in str(port_range):
         try:
-            start, end = port_range.split("-")
+            start, end = str(port_range).split("-")
             ports = list(range(int(start), int(end) + 1))
         except ValueError:
             logger.warning(f"Invalid port range format: {port_range}")
@@ -105,15 +175,19 @@ def check_security_group_rule(rule: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     # Get rule properties
     protocol = rule.get("protocol", "").lower()
     remote_ip = rule.get("remote_ip_prefix", "")
-    port_range = rule.get("port_range", "")
+    port_range = rule.get("multiport") or rule.get("port_range", "")
     direction = rule.get("direction", "ingress")
 
-    # Check if protocol is TCP or ALL
-    if protocol not in ["tcp", "all", "any", ""]:
+    # Only check ingress rules
+    if direction != "ingress":
         return None
 
     # Check if remote IP is open to internet
     if remote_ip not in HIGH_RISK_REMOTE_IPS:
+        return None
+
+    # Check if protocol is TCP or ALL
+    if protocol not in ["tcp", "all", "any", "", None]:
         return None
 
     # Parse port range and check for high-risk ports
@@ -124,7 +198,12 @@ def check_security_group_rule(rule: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         return None
 
     # Determine risk level
-    risk_level = "critical" if 22 in risky_ports else "high"
+    if 22 in risky_ports or 3389 in risky_ports:
+        risk_level = "critical"
+    elif any(p in [3306, 5432, 6379, 1433] for p in risky_ports):
+        risk_level = "high"
+    else:
+        risk_level = "medium"
 
     return {
         "ports": risky_ports,
@@ -135,21 +214,29 @@ def check_security_group_rule(rule: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     }
 
 
-def get_security_group_rules(security_group_id: str, region: str) -> List[Dict[str, Any]]:
+def get_security_group_rules(
+    security_group_id: str,
+    region: str,
+    credentials: Optional[Dict[str, str]] = None
+) -> List[Dict[str, Any]]:
     """
     Get all rules for a security group.
 
     Args:
         security_group_id: Security group ID
         region: Region name
+        credentials: Optional credentials dict
 
     Returns:
         List of security group rules
     """
-    response = run_hcloud_command(
-        ["vpc", "ListSecurityGroupRules", f"--security_group_id={security_group_id}"],
-        region
-    )
+    if credentials is None:
+        credentials = get_credentials()
+
+    # Use proper parameter format for ListSecurityGroupRules
+    command = ["VPC", "ListSecurityGroupRules", f"--security_group_id={security_group_id}"]
+
+    response = run_hcloud_command(command, region, credentials)
 
     if not response:
         return []
@@ -163,17 +250,25 @@ def get_security_group_rules(security_group_id: str, region: str) -> List[Dict[s
     return []
 
 
-def scan_security_group(security_group: Dict[str, Any], region: str) -> List[Dict[str, Any]]:
+def scan_security_group(
+    security_group: Dict[str, Any],
+    region: str,
+    credentials: Optional[Dict[str, str]] = None
+) -> List[Dict[str, Any]]:
     """
     Scan a single security group for issues.
 
     Args:
         security_group: Security group dictionary
         region: Region name
+        credentials: Optional credentials dict
 
     Returns:
         List of security issues found
     """
+    if credentials is None:
+        credentials = get_credentials()
+
     issues = []
 
     sg_id = security_group.get("id") or security_group.get("security_group_id", "unknown")
@@ -181,7 +276,7 @@ def scan_security_group(security_group: Dict[str, Any], region: str) -> List[Dic
     vpc_id = security_group.get("vpc_id", "unknown")
 
     # Get all rules for this security group
-    rules = get_security_group_rules(sg_id, region)
+    rules = get_security_group_rules(sg_id, region, credentials)
 
     for rule in rules:
         issue_details = check_security_group_rule(rule)
@@ -205,17 +300,24 @@ def scan_security_group(security_group: Dict[str, Any], region: str) -> List[Dic
     return issues
 
 
-def get_security_groups(region: str) -> List[Dict[str, Any]]:
+def get_security_groups(
+    region: str,
+    credentials: Optional[Dict[str, str]] = None
+) -> List[Dict[str, Any]]:
     """
     Get all security groups in a region.
 
     Args:
         region: Region name
+        credentials: Optional credentials dict
 
     Returns:
         List of security groups
     """
-    response = run_hcloud_command(["vpc", "ListSecurityGroups"], region)
+    if credentials is None:
+        credentials = get_credentials()
+
+    response = run_hcloud_command(["VPC", "ListSecurityGroups"], region, credentials)
 
     if not response:
         return []
@@ -229,16 +331,30 @@ def get_security_groups(region: str) -> List[Dict[str, Any]]:
     return []
 
 
-def scan_security_groups(regions: List[str]) -> List[Dict[str, Any]]:
+def scan_security_groups(
+    regions: List[str],
+    credentials: Optional[Dict[str, str]] = None
+) -> List[Dict[str, Any]]:
     """
     Scan security groups across multiple regions for high-risk configurations.
 
     Args:
         regions: List of region names to scan
+        credentials: Optional credentials dict
 
     Returns:
         List of security issues found across all regions
     """
+    # Validate environment before starting
+    try:
+        validate_env()
+    except ValueError as e:
+        logger.error(f"Environment validation failed: {e}")
+        raise
+
+    if credentials is None:
+        credentials = get_credentials()
+
     all_issues = []
 
     logger.info(f"Starting security group scan for {len(regions)} region(s)")
@@ -247,7 +363,7 @@ def scan_security_groups(regions: List[str]) -> List[Dict[str, Any]]:
         logger.info(f"Scanning region: {region}")
 
         try:
-            security_groups = get_security_groups(region)
+            security_groups = get_security_groups(region, credentials)
 
             if not security_groups:
                 logger.info(f"No security groups found in region {region}")
@@ -256,7 +372,7 @@ def scan_security_groups(regions: List[str]) -> List[Dict[str, Any]]:
             logger.info(f"Found {len(security_groups)} security groups in {region}")
 
             for sg in security_groups:
-                issues = scan_security_group(sg, region)
+                issues = scan_security_group(sg, region, credentials)
                 all_issues.extend(issues)
 
                 if issues:
@@ -275,8 +391,6 @@ def scan_security_groups(regions: List[str]) -> List[Dict[str, Any]]:
 
 def main():
     """Main entry point for testing."""
-    import os
-
     # Get regions from environment or use default
     regions_env = os.environ.get("HWCLOUD_REGIONS", "cn-north-4")
     regions = [r.strip() for r in regions_env.split(",") if r.strip()]

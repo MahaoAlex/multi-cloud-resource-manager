@@ -57,6 +57,14 @@ def get_regions_from_env() -> List[str]:
     return [r.strip() for r in regions_env.split(",") if r.strip()]
 
 
+def validate_environment():
+    """Validate required environment variables."""
+    required = ['HWCLOUD_ACCESS_KEY', 'HWCLOUD_SECRET_KEY']
+    missing = [var for var in required if not os.environ.get(var)]
+    if missing:
+        raise ValueError(f"Missing required environment variables: {', '.join(missing)}")
+
+
 def scan_vpcs(
     regions: Optional[List[str]] = None,
     output_dir: str = "./reports",
@@ -408,6 +416,13 @@ def main():
     parser.add_argument("--scan", choices=["vpc", "security", "obs", "ecs", "eip", "full"], default="full")
 
     args = parser.parse_args()
+
+    # Validate environment
+    try:
+        validate_environment()
+    except ValueError as e:
+        logger.error(f"Environment validation failed: {e}")
+        sys.exit(1)
 
     # Set regions if provided
     if args.regions:
