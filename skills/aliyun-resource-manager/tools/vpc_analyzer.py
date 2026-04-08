@@ -39,8 +39,7 @@ def run_aliyun_command(service: str, action: str, args: List[str], region: str) 
     """
     full_command = [
         "aliyun", service, action,
-        f"--region={region}",
-        "--output", "json"
+        f"--region={region}"
     ] + args
 
     try:

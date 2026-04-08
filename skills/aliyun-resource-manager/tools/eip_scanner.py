@@ -28,7 +28,7 @@ def run_aliyun_command(
     Returns:
         dict: Parsed JSON response or error info
     """
-    cmd = ['aliyun', service, action, f'--region={region}', '--output', 'json']
+    cmd = ['aliyun', service, action, f'--region={region}']
     if args:
         cmd.extend(args)
 

@@ -17,7 +17,30 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 logger = logging.getLogger(__name__)
 
 # High-risk ports to check
-HIGH_RISK_PORTS = [22, 33, 44]
+HIGH_RISK_PORTS = [
+    22,      # SSH
+    23,      # Telnet
+    3389,    # RDP
+    3306,    # MySQL
+    1433,    # MSSQL
+    5432,    # PostgreSQL
+    6379,    # Redis
+    27017,   # MongoDB
+    9200,    # Elasticsearch
+    11211,   # Memcached
+    21,      # FTP
+    20,      # FTP Data
+    445,     # SMB
+    135,     # RPC
+    139,     # NetBIOS
+    4444,    # Common backdoor
+    5555,    # Common backdoor
+    3389,    # RDP (duplicate for clarity)
+    5900,    # VNC
+    5800,    # VNC Web
+    8080,    # Common web proxy
+    8443,    # Common HTTPS alt
+]
 
 # High-risk remote IPs (open to internet)
 HIGH_RISK_REMOTE_IPS = ["0.0.0.0/0", "::/0"]
@@ -38,8 +61,7 @@ def run_aliyun_command(service: str, action: str, args: List[str], region: str) 
     """
     full_command = [
         "aliyun", service, action,
-        f"--region={region}",
-        "--output", "json"
+        f"--region={region}"
     ] + args
 
     try:

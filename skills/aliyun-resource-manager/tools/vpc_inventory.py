@@ -34,8 +34,7 @@ def run_aliyun_command(action: str, args: List[str], region: str) -> Optional[Di
     """
     full_command = [
         "aliyun", "vpc", action,
-        f"--region={region}",
-        "--output", "json"
+        f"--region={region}"
     ] + args
 
     try:
