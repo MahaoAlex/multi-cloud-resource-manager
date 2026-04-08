@@ -473,9 +473,10 @@ Configure hourly scans:
 
 ## Documentation
 
-- **[Huawei Cloud Setup Guide](./docs/huaweicloud-setup-guide.md)** - Complete deployment guide (Chinese)
-- **[Alibaba Cloud Setup Guide](./docs/aliyun-setup-guide.md)** - Aliyun configuration guide
-- **[AWS Setup Guide](./docs/aws-setup-guide.md)** - AWS configuration guide
+- **[Huawei Cloud Complete Guide](./docs/huaweicloud-complete-guide.md)** (中文) - 华为云完整使用指南
+- **[Alibaba Cloud Complete Guide](./docs/aliyun-complete-guide.md)** (中文) - 阿里云完整使用指南  
+- **[AWS Complete Guide](./docs/aws-complete-guide.md)** (中文) - AWS 完整使用指南
+- **[CLAUDE.md](./CLAUDE.md)** - Development guidelines and code specifications
 - **[CLAUDE.md](./CLAUDE.md)** - Development guidelines and code specifications
 
 ## Security Best Practices
