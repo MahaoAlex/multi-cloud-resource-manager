@@ -23,8 +23,8 @@ curl -LO https://ap-southeast-3-hwcloudcli.obs.ap-southeast-3.myhuaweicloud.com/
 tar -xzf huaweicloud-cli-linux-amd64.tar.gz
 sudo mv hcloud /usr/local/bin/
 
-# 验证安装
-hcloud --help
+# 验证安装（注意：hcloud 不支持 --version，请使用 --help）
+hcloud --help > /dev/null 2>&1 && echo "hcloud installed successfully" || echo "hcloud installation failed"
 ```
 
 ### 1.3 获取华为云凭证

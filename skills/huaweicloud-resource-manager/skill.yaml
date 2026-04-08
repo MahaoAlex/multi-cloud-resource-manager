@@ -1,5 +1,9 @@
 name: huaweicloud-resource-manager
-description: Unified Huawei Cloud resource management tool for VPC inventory, security scanning, quota monitoring, and compliance checking across multiple regions.
+description: |
+  Unified Huawei Cloud resource management tool for VPC inventory, security scanning, quota monitoring, and compliance checking across multiple regions.
+
+  IMPORTANT: When verifying hcloud CLI installation, use 'hcloud --help' instead of 'hcloud --version'.
+  The hcloud CLI does not support the --version flag.
 version: 1.0.0
 
 tools:

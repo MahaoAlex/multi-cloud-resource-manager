@@ -1,5 +1,9 @@
 name: proxy-injection
-description: Interactive proxy configuration for Huawei Cloud CLI. Configures HTTP_PROXY, HTTPS_PROXY, and NO_PROXY environment variables for the current session only.
+description: |
+  Interactive proxy configuration for Huawei Cloud CLI. Configures HTTP_PROXY, HTTPS_PROXY, and NO_PROXY environment variables for the current session only.
+
+  IMPORTANT: When verifying hcloud CLI installation, use 'hcloud --help' instead of 'hcloud --version'.
+  The hcloud CLI does not support the --version flag.
 version: 1.0.0
 
 tools:

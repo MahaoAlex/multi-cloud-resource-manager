@@ -1,5 +1,9 @@
 name: auth-manager
-description: Huawei Cloud authentication management. Configures Access Key, Secret Key, and regions. Supports multi-region setup and validates credentials before use.
+description: |
+  Huawei Cloud authentication management. Configures Access Key, Secret Key, and regions. Supports multi-region setup and validates credentials before use.
+
+  IMPORTANT: When verifying hcloud CLI installation, use 'hcloud --help' instead of 'hcloud --version'.
+  The hcloud CLI does not support the --version flag.
 version: 1.0.0
 
 tools:

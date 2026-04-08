@@ -54,6 +54,16 @@ if __name__ == "__main__":
 4. Do not use decorative symbols, emojis, or non-text elements
 5. Run scripts using Python 3.8 or higher for compatibility
 
+## Huawei Cloud CLI (hcloud) Notes
+
+When checking if hcloud CLI is installed, use `hcloud --help` instead of `hcloud --version`.
+The hcloud CLI does not support the `--version` flag.
+
+Correct verification command:
+```bash
+hcloud --help > /dev/null 2>&1 && echo "hcloud installed" || echo "hcloud not found"
+```
+
 ## File Structure Suggestion
 
 - Store code files in a dedicated `src` directory
