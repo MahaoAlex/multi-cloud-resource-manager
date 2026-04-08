@@ -7,6 +7,7 @@ Handles credential configuration, validation, and environment setup.
 import os
 import subprocess
 import re
+import json
 from getpass import getpass
 from typing import List, Tuple, Dict, Optional
 
@@ -116,7 +117,64 @@ def parse_regions(regions_input: str) -> List[str]:
     return unique_regions if unique_regions else DEFAULT_REGIONS
 
 
-def validate_region(access_key: str, secret_key: str, region: str) -> Tuple[bool, Optional[str]]:
+def get_project_id(access_key: str, secret_key: str, region: str) -> Optional[str]:
+    """
+    Try to discover project ID from IAM API.
+
+    Args:
+        access_key: Access Key ID
+        secret_key: Secret Access Key
+        region: Region ID
+
+    Returns:
+        Project ID if found, None otherwise
+    """
+    try:
+        env = os.environ.copy()
+        env['HWCLOUD_ACCESS_KEY'] = access_key
+        env['HWCLOUD_SECRET_KEY'] = secret_key
+
+        # Query IAM for projects
+        result = subprocess.run(
+            ['hcloud', 'IAM', 'KeystoneListAuthProjects',
+             f'--cli-access-key={access_key}',
+             f'--cli-secret-key={secret_key}',
+             f'--cli-region={region}'],
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=30
+        )
+
+        if result.returncode == 0:
+            # Parse output to extract project ID
+            output_lines = result.stdout.strip().split('\n')
+            json_lines = []
+            for line in output_lines:
+                if line.strip() and 'multi-version API' not in line:
+                    json_lines.append(line)
+
+            if json_lines:
+                try:
+                    data = json.loads('\n'.join(json_lines))
+                    projects = data.get('projects', [])
+                    if projects:
+                        # Find the default project for this region
+                        for proj in projects:
+                            if region in proj.get('name', ''):
+                                return proj.get('id')
+                        # Return first project if no match
+                        return projects[0].get('id')
+                except json.JSONDecodeError:
+                    pass
+
+        return None
+
+    except Exception:
+        return None
+
+
+def validate_region(access_key: str, secret_key: str, region: str, project_id: str = None) -> Tuple[bool, Optional[str]]:
     """
     Validate credentials against a specific region using hcloud CLI.
 
@@ -124,21 +182,24 @@ def validate_region(access_key: str, secret_key: str, region: str) -> Tuple[bool
         access_key: Huawei Cloud Access Key ID
         secret_key: Huawei Cloud Secret Access Key
         region: Region ID to validate against
+        project_id: Optional Project ID for IAM sub-users
 
     Returns:
         Tuple of (is_valid, error_message)
     """
     try:
-        # Set environment variables for hcloud
-        env = os.environ.copy()
-        env['HWCLOUD_ACCESS_KEY'] = access_key
-        env['HWCLOUD_SECRET_KEY'] = secret_key
-        env['HWCLOUD_REGION'] = region
+        # Build command with authentication
+        cmd = ['hcloud', 'VPC', 'ListVpcs',
+               f'--cli-access-key={access_key}',
+               f'--cli-secret-key={secret_key}',
+               f'--cli-region={region}']
+
+        if project_id:
+            cmd.append(f'--cli-project-id={project_id}')
 
         # Run hcloud vpc ListVpcs to validate credentials
         result = subprocess.run(
-            ['hcloud', 'vpc', 'ListVpcs'],
-            env=env,
+            cmd,
             capture_output=True,
             text=True,
             timeout=30
@@ -149,8 +210,15 @@ def validate_region(access_key: str, secret_key: str, region: str) -> Tuple[bool
 
         # Check for specific error messages
         stderr = result.stderr.lower()
+        stdout = result.stdout.lower()
+
         if 'unauthorized' in stderr or 'authentication' in stderr:
             return False, "Authentication failed. Please check your credentials."
+        if 'project' in stderr or 'project' in stdout:
+            if not project_id:
+                return False, f"Project ID required. This account may be an IAM sub-user."
+            else:
+                return False, f"Invalid Project ID for region '{region}'."
         if 'region' in stderr:
             return False, f"Region '{region}' not found or not accessible."
 
@@ -172,7 +240,7 @@ def configure_auth(access_key: str, secret_key: str, regions: List[str], project
         access_key: Huawei Cloud Access Key ID
         secret_key: Huawei Cloud Secret Access Key
         regions: List of region IDs
-        project_id: Optional Project ID
+        project_id: Optional Project ID (strongly recommended for IAM sub-users)
 
     Returns:
         dict: Configuration result with status
@@ -183,7 +251,8 @@ def configure_auth(access_key: str, secret_key: str, regions: List[str], project
         "errors": [],
         "validated_regions": [],
         "failed_regions": [],
-        "masked_access_key": mask_string(access_key)
+        "masked_access_key": mask_string(access_key),
+        "project_id": project_id
     }
 
     # Validate input
@@ -197,10 +266,21 @@ def configure_auth(access_key: str, secret_key: str, regions: List[str], project
         result["errors"].append(f"Secret Key: {sk_error}")
         return result
 
+    # Try to auto-discover project ID if not provided
+    if not project_id and regions:
+        print("  Attempting to discover Project ID...")
+        discovered = get_project_id(access_key, secret_key, regions[0])
+        if discovered:
+            print(f"  Discovered Project ID: {discovered}")
+            project_id = discovered
+            result["project_id"] = project_id
+        else:
+            print("  Could not auto-discover Project ID.")
+
     # Validate credentials against each region
     print("\nValidating credentials...")
     for region in regions:
-        is_valid, error = validate_region(access_key, secret_key, region)
+        is_valid, error = validate_region(access_key, secret_key, region, project_id)
         if is_valid:
             result["validated_regions"].append(region)
             print(f"  Region {region}: OK")
@@ -211,6 +291,8 @@ def configure_auth(access_key: str, secret_key: str, regions: List[str], project
     # Only proceed if at least one region validated successfully
     if not result["validated_regions"]:
         result["errors"].append("No regions could be validated. Please check your credentials and network.")
+        if not project_id:
+            result["errors"].append("Hint: If using an IAM sub-user, Project ID is required.")
         return result
 
     # Set environment variables
@@ -261,6 +343,9 @@ def interactive_auth_setup():
     print("Configure authentication credentials for hcloud CLI.")
     print("Your credentials will be validated before being applied.")
     print()
+    print("NOTE: For IAM sub-users, Project ID is required.")
+    print("      Main account users can leave Project ID blank.")
+    print()
 
     # Show current configuration
     current = get_current_auth_config()
@@ -295,9 +380,13 @@ def interactive_auth_setup():
 
     regions = parse_regions(regions_input if regions_input else ','.join(DEFAULT_REGIONS))
 
-    # Optional project ID
+    # Project ID - strongly recommended for IAM sub-users
     print()
-    project_id = input("Project ID (optional): ").strip()
+    print("Project ID:")
+    print("  - Required for IAM sub-users")
+    print("  - Optional for main account users")
+    print("  - Format: 32-character hex string (e.g., b6c0fd8b70114e2fad507fb0f2f39227)")
+    project_id = input("Project ID (press Enter to skip): ").strip()
 
     print()
 
@@ -333,6 +422,12 @@ def interactive_auth_setup():
             print(f"Failed regions ({len(result['failed_regions'])}):")
             for fail in result["failed_regions"]:
                 print(f"  - {fail['region']}: {fail['error']}")
+
+        # Warn if no project_id for IAM sub-users
+        if not result.get("project_id"):
+            print()
+            print("WARNING: No Project ID configured.")
+            print("         If you are an IAM sub-user, please reconfigure with Project ID.")
     else:
         print("Configuration failed:")
         for error in result["errors"]:
