@@ -435,6 +435,51 @@ history -c
 
 ### 10.2 所需 IAM 权限
 
+为了完成完整的资源扫描，AK/SK 对应的 IAM 用户需要以下权限：
+
+#### VPC 相关权限
+
+| 权限 Action | 用途 | 必需 |
+|-------------|------|------|
+| `vpc:vpcs:list` | 查询 VPC 列表 | 是 |
+| `vpc:vpcs:get` | 获取 VPC 详情 | 是 |
+| `vpc:subnets:list` | 查询子网列表 | 是 |
+| `vpc:securityGroups:list` | 查询安全组列表 | 是 |
+| `vpc:securityGroupRules:list` | 查询安全组规则 | 是 |
+| `vpc:ports:list` | 查询端口（网卡）信息 | 是 |
+
+#### ECS 相关权限
+
+| 权限 Action | 用途 | 必需 |
+|-------------|------|------|
+| `ecs:servers:list` | 查询 ECS 实例列表 | 是 |
+| `ecs:servers:get` | 获取 ECS 实例详情 | 是 |
+| `ecs:serverVolumeAttachments:list` | 查询云硬盘挂载信息 | 否 |
+| `ecs:serverInterfaces:list` | 查询网卡信息 | 是 |
+
+#### OBS 相关权限
+
+| 权限 Action | 用途 | 必需 |
+|-------------|------|------|
+| `obs:bucket:list` | 查询 OBS 桶列表 | 是 |
+| `obs:bucket:getBucketAcl` | 获取桶 ACL 权限 | 是 |
+| `obs:object:getObjectAcl` | 获取对象 ACL 权限（对象级扫描） | 否 |
+
+#### EIP 相关权限
+
+| 权限 Action | 用途 | 必需 |
+|-------------|------|------|
+| `vpc:publicIps:list` | 查询弹性 IP 列表 | 是 |
+
+#### CES 监控权限
+
+| 权限 Action | 用途 | 必需 |
+|-------------|------|------|
+| `ces:metrics:list` | 查询监控指标列表 | 是 |
+| `ces:data:list` | 获取监控数据（CPU 利用率） | 是 |
+
+#### 完整权限策略（JSON）
+
 ```json
 {
   "Version": "1.1",
@@ -443,19 +488,36 @@ history -c
       "Effect": "Allow",
       "Action": [
         "vpc:vpcs:list",
+        "vpc:vpcs:get",
         "vpc:subnets:list",
         "vpc:securityGroups:list",
         "vpc:securityGroupRules:list",
+        "vpc:ports:list",
+        "vpc:publicIps:list",
         "ecs:servers:list",
+        "ecs:servers:get",
+        "ecs:serverInterfaces:list",
         "obs:bucket:list",
         "obs:bucket:getBucketAcl",
-        "ces:metrics:list"
+        "ces:metrics:list",
+        "ces:data:list"
       ],
       "Resource": ["*"]
     }
   ]
 }
 ```
+
+#### 使用内置策略
+
+也可以使用华为云内置的只读策略：
+
+1. **VPC ReadOnlyAccess** - VPC 只读访问权限
+2. **ECS ReadOnlyAccess** - ECS 只读访问权限
+3. **OBS ReadOnlyAccess** - OBS 只读访问权限
+4. **CES ReadOnlyAccess** - 云监控只读权限
+
+将这些策略附加到 IAM 用户即可。
 
 ### 10.3 运营安全
 

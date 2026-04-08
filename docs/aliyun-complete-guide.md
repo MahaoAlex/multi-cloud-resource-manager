@@ -295,7 +295,9 @@ export PATH=$PATH:/usr/local/bin
 
 **Q: 权限不足**
 
-确保 AccessKey 具有以下权限：
+确保 AccessKey 具有以下权限。详细的权限说明见下文"十、安全注意事项"中的"所需 RAM 权限"部分。
+
+快速修复：为 IAM 用户附加以下系统策略：
 - `AliyunECSReadOnlyAccess`
 - `AliyunVPCReadOnlyAccess`
 - `AliyunOSSReadOnlyAccess`
@@ -320,7 +322,88 @@ source /path/to/aliyun-env.sh
 chmod 600 /path/to/aliyun-env.sh
 ```
 
-### 10.2 运营安全
+### 10.2 所需 RAM 权限
+
+为了完成完整的资源扫描，AccessKey 对应的 RAM 用户需要以下权限：
+
+#### ECS 相关权限
+
+| 权限 Action | 用途 | 必需 |
+|-------------|------|------|
+| `ecs:DescribeInstances` | 查询 ECS 实例列表 | 是 |
+| `ecs:DescribeInstanceAttribute` | 获取 ECS 实例详情 | 是 |
+| `ecs:DescribeDisks` | 查询云盘信息 | 否 |
+| `ecs:DescribeNetworkInterfaces` | 查询网卡信息 | 是 |
+
+#### VPC 相关权限
+
+| 权限 Action | 用途 | 必需 |
+|-------------|------|------|
+| `vpc:DescribeVpcs` | 查询 VPC 列表 | 是 |
+| `vpc:DescribeVSwitches` | 查询 VSwitch 列表 | 是 |
+| `vpc:DescribeSecurityGroups` | 查询安全组列表 | 是 |
+| `vpc:DescribeSecurityGroupAttribute` | 获取安全组详情 | 是 |
+| `vpc:DescribeEipAddresses` | 查询 EIP 列表 | 是 |
+
+#### OSS 相关权限
+
+| 权限 Action | 用途 | 必需 |
+|-------------|------|------|
+| `oss:ListBuckets` | 查询 OSS 桶列表 | 是 |
+| `oss:GetBucketAcl` | 获取桶 ACL 权限 | 是 |
+| `oss:ListObjects` | 查询对象列表（对象级扫描） | 否 |
+| `oss:GetObjectAcl` | 获取对象 ACL 权限（对象级扫描） | 否 |
+
+#### CMS 监控权限
+
+| 权限 Action | 用途 | 必需 |
+|-------------|------|------|
+| `cms:DescribeMetricList` | 查询监控指标数据 | 是 |
+| `cms:DescribeMetricMetaList` | 查询监控指标列表 | 是 |
+
+#### 自定义权限策略（JSON）
+
+```json
+{
+  "Version": "1",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "ecs:DescribeInstances",
+        "ecs:DescribeInstanceAttribute",
+        "ecs:DescribeNetworkInterfaces",
+        "vpc:DescribeVpcs",
+        "vpc:DescribeVSwitches",
+        "vpc:DescribeSecurityGroups",
+        "vpc:DescribeSecurityGroupAttribute",
+        "vpc:DescribeEipAddresses",
+        "oss:ListBuckets",
+        "oss:GetBucketAcl",
+        "cms:DescribeMetricList",
+        "cms:DescribeMetricMetaList"
+      ],
+      "Resource": ["*"]
+    }
+  ]
+}
+```
+
+#### 使用系统策略
+
+阿里云提供了内置的只读策略，可以直接附加到 RAM 用户：
+
+| 策略名称 | 说明 |
+|----------|------|
+| `AliyunECSReadOnlyAccess` | ECS 只读访问权限 |
+| `AliyunVPCReadOnlyAccess` | VPC 只读访问权限 |
+| `AliyunOSSReadOnlyAccess` | OSS 只读访问权限 |
+| `AliyunEIPReadOnlyAccess` | EIP 只读访问权限 |
+| `AliyunCloudMonitorReadOnlyAccess` | 云监控只读权限 |
+
+**注意**：`AliyunOSSReadOnlyAccess` 策略可能包含 bucket 内容读取权限，如果只需要元数据扫描，建议创建自定义策略。
+
+### 10.3 运营安全
 
 - 所有扫描操作均为**只读**
 - 删除操作需要人工确认

@@ -294,10 +294,12 @@ export PATH=$PATH:/usr/local/bin
 
 **Q: 权限不足**
 
-确保 IAM 用户/角色具有以下权限：
-- `ec2:Describe*`
-- `s3:Get*`, `s3:List*`
-- `cloudwatch:Get*`, `cloudwatch:List*`
+确保 IAM 用户/角色具有所需权限。详细的权限说明见下文"十、安全注意事项"中的"所需 IAM 权限"部分。
+
+快速修复：为 IAM 用户附加以下托管策略：
+- `arn:aws:iam::aws:policy/AmazonEC2ReadOnlyAccess`
+- `arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess`
+- `arn:aws:iam::aws:policy/CloudWatchReadOnlyAccess`
 
 **Q: 某些区域扫描失败**
 
@@ -317,7 +319,104 @@ source /path/to/aws-env.sh
 chmod 600 /path/to/aws-env.sh
 ```
 
-### 10.2 运营安全
+### 10.2 所需 IAM 权限
+
+为了完成完整的资源扫描，Access Key 对应的 IAM 用户/角色需要以下权限：
+
+#### EC2 相关权限
+
+| 权限 Action | 用途 | 必需 |
+|-------------|------|------|
+| `ec2:DescribeVpcs` | 查询 VPC 列表 | 是 |
+| `ec2:DescribeVpcAttribute` | 获取 VPC 属性 | 是 |
+| `ec2:DescribeSubnets` | 查询子网列表 | 是 |
+| `ec2:DescribeSecurityGroups` | 查询安全组列表 | 是 |
+| `ec2:DescribeSecurityGroupRules` | 查询安全组规则 | 是 |
+| `ec2:DescribeInstances` | 查询 EC2 实例列表 | 是 |
+| `ec2:DescribeNetworkInterfaces` | 查询网卡(ENI)信息 | 是 |
+| `ec2:DescribeAddresses` | 查询弹性 IP 列表 | 是 |
+
+#### S3 相关权限
+
+| 权限 Action | 用途 | 必需 |
+|-------------|------|------|
+| `s3:ListAllMyBuckets` | 查询所有 S3 桶列表 | 是 |
+| `s3:GetBucketLocation` | 获取桶所在区域 | 是 |
+| `s3:GetBucketAcl` | 获取桶 ACL 权限 | 是 |
+| `s3:GetBucketPolicy` | 获取桶策略 | 是 |
+| `s3:GetBucketPublicAccessBlock` | 获取公共访问阻止配置 | 是 |
+| `s3:GetObjectAcl` | 获取对象 ACL（对象级扫描） | 否 |
+
+#### CloudWatch 监控权限
+
+| 权限 Action | 用途 | 必需 |
+|-------------|------|------|
+| `cloudwatch:GetMetricStatistics` | 获取监控统计数据 | 是 |
+| `cloudwatch:ListMetrics` | 列出监控指标 | 是 |
+
+#### 完整权限策略（JSON）
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "ec2:DescribeVpcs",
+        "ec2:DescribeVpcAttribute",
+        "ec2:DescribeSubnets",
+        "ec2:DescribeSecurityGroups",
+        "ec2:DescribeSecurityGroupRules",
+        "ec2:DescribeInstances",
+        "ec2:DescribeNetworkInterfaces",
+        "ec2:DescribeAddresses",
+        "s3:ListAllMyBuckets",
+        "s3:GetBucketLocation",
+        "s3:GetBucketAcl",
+        "s3:GetBucketPolicy",
+        "s3:GetBucketPublicAccessBlock",
+        "cloudwatch:GetMetricStatistics",
+        "cloudwatch:ListMetrics"
+      ],
+      "Resource": "*"
+    }
+  ]
+}
+```
+
+#### 使用托管策略
+
+AWS 提供了内置的只读策略，可以直接附加到 IAM 用户/角色：
+
+| 策略 ARN | 说明 |
+|----------|------|
+| `arn:aws:iam::aws:policy/AmazonEC2ReadOnlyAccess` | EC2 只读访问权限 |
+| `arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess` | S3 只读访问权限 |
+| `arn:aws:iam::aws:policy/CloudWatchReadOnlyAccess` | CloudWatch 只读权限 |
+
+**注意**：`AmazonS3ReadOnlyAccess` 包含 `s3:GetObject` 权限。如果只需要元数据扫描，建议创建自定义策略。
+
+#### 通过 AWS CLI 附加策略
+
+```bash
+# 附加 EC2 只读权限
+aws iam attach-user-policy \
+  --user-name your-iam-user \
+  --policy-arn arn:aws:iam::aws:policy/AmazonEC2ReadOnlyAccess
+
+# 附加 S3 只读权限
+aws iam attach-user-policy \
+  --user-name your-iam-user \
+  --policy-arn arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess
+
+# 附加 CloudWatch 只读权限
+aws iam attach-user-policy \
+  --user-name your-iam-user \
+  --policy-arn arn:aws:iam::aws:policy/CloudWatchReadOnlyAccess
+```
+
+### 10.3 运营安全
 
 - 所有扫描操作均为**只读**
 - 删除操作需要人工确认
