@@ -11,12 +11,16 @@
 - 华为云 CLI (hcloud) 已安装
 - 华为云账号及 AK/SK
 
-### 1.2 安装华为云 CLI
+### 1.2 安装华为云 CLI (KooCLI)
+
+Huawei Cloud CLI 已更名为 **KooCLI**，但命令行工具名称仍为 `hcloud`。
+
+**官方文档**: https://support.huaweicloud.com/intl/en-us/qs-hcli/hcli_02_003.html
 
 ```bash
-# Linux/Mac
-curl -LO https://obs-community.obs.cn-north-1.myhuaweicloud.com/hcloud/hcloud_latest_linux_amd64.tar.gz
-tar -xzf hcloud_latest_linux_amd64.tar.gz
+# Linux (AMD64)
+curl -LO https://ap-southeast-3-hwcloudcli.obs.ap-southeast-3.myhuaweicloud.com/cli/latest/huaweicloud-cli-linux-amd64.tar.gz
+tar -xzf huaweicloud-cli-linux-amd64.tar.gz
 sudo mv hcloud /usr/local/bin/
 
 # 验证安装
@@ -178,7 +182,7 @@ Claude: 开始扫描华为云 VPC 资源...
 
 当前阶段: 正在枚举 VPC
 执行动作: 执行 hcloud vpc ListVpcs 命令
-所依据的官方文档约束: https://support.huaweicloud.com/intl/en-us/productdesc-hcli/hcli_01.html
+所依据的官方文档约束: https://support.huaweicloud.com/intl/en-us/qs-hcli/hcli_02_003.html
 
 [1/2] 扫描区域: cn-north-4
   - 发现 5 个 VPC

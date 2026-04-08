@@ -29,7 +29,9 @@ cp -r skills/huaweicloud-core/* ~/.openclaw/skills/
 cp -r skills/huaweicloud-resource-manager ~/.openclaw/skills/
 ```
 
-2. Ensure hcloud CLI is installed and accessible in PATH.
+2. Ensure Huawei Cloud CLI (KooCLI / hcloud) is installed and accessible in PATH.
+
+   Download: https://support.huaweicloud.com/intl/en-us/qs-hcli/hcli_02_003.html
 
 ## Quick Start
 

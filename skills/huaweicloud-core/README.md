@@ -6,7 +6,7 @@ Infrastructure skills providing reusable capabilities for Huawei Cloud CLI authe
 
 ### proxy-injection
 
-Configure proxy settings for Huawei Cloud CLI (hcloud) in the current session.
+Configure proxy settings for Huawei Cloud CLI (KooCLI / hcloud) in the current session.
 
 **Usage:**
 ```
@@ -43,7 +43,7 @@ Note: These settings are only valid for the current session.
 
 ### auth-manager
 
-Configure Huawei Cloud authentication credentials for hcloud CLI.
+Configure Huawei Cloud authentication credentials for Huawei Cloud CLI (KooCLI / hcloud).
 
 **Usage:**
 ```
@@ -53,7 +53,7 @@ Configure Huawei Cloud authentication credentials for hcloud CLI.
 **Features:**
 - Masked input for Access Key ID and Secret Access Key
 - Multi-region support (comma-separated or 'all')
-- Credential validation with `hcloud vpc ListVpcs` for each region
+- Credential validation with `hcloud vpc ListVpcs` (KooCLI) for each region
 - Per-region validation results
 
 **Environment Variables Set:**
@@ -115,7 +115,7 @@ Note: These settings are only valid for the current session.
 ## Prerequisites
 
 - Python 3.8 or higher
-- Huawei Cloud CLI (hcloud) installed (for auth-manager validation)
+- Huawei Cloud CLI (KooCLI / hcloud) installed (for auth-manager validation)
 
 ## File Structure
 

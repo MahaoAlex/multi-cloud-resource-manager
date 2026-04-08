@@ -1,12 +1,12 @@
 ---
 name: proxy-injection
-description: Interactive proxy configuration for Huawei Cloud CLI. Configures HTTP_PROXY, HTTPS_PROXY, and NO_PROXY environment variables for the current session.
+description: Interactive proxy configuration for Huawei Cloud CLI (KooCLI). Configures HTTP_PROXY, HTTPS_PROXY, and NO_PROXY environment variables for the current session.
 disable-model-invocation: true
 ---
 
 # Proxy Injection Skill
 
-Configure proxy settings for Huawei Cloud CLI (hcloud) in the current session.
+Configure proxy settings for Huawei Cloud CLI (KooCLI / hcloud) in the current session.
 
 ## Usage
 

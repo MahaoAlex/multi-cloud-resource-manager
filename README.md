@@ -37,7 +37,7 @@ Huawei Cloud Resource Manager provides comprehensive resource scanning capabilit
 ### Prerequisites
 
 - Claude Code installed
-- Huawei Cloud CLI (hcloud) installed
+- Huawei Cloud CLI (KooCLI / hcloud) installed
 - Huawei Cloud Access Key and Secret Key
 
 ### Installation
@@ -75,7 +75,7 @@ Huawei Cloud Resource Manager provides comprehensive resource scanning capabilit
 
 | Skill | Command | Description |
 |-------|---------|-------------|
-| Proxy Injection | `/proxy-injection` | Configure HTTP/HTTPS proxy for hcloud CLI |
+| Proxy Injection | `/proxy-injection` | Configure HTTP/HTTPS proxy for Huawei Cloud CLI |
 | Auth Manager | `/auth-manager` | Configure multi-region authentication |
 | Resource Scanner | `/huaweicloud-scan` | Full resource scan across all categories |
 | VPC Inventory | Scan VPCs | Enumerate and analyze VPC usage |

@@ -1,12 +1,14 @@
 ---
 name: auth-manager
-description: Huawei Cloud authentication setup. Configures Access Key, Secret Key, and regions for hcloud CLI with validation.
+description: Huawei Cloud authentication setup. Configures Access Key, Secret Key, and regions for Huawei Cloud CLI (KooCLI) with validation.
 disable-model-invocation: true
 ---
 
 # Auth Manager Skill
 
-Configure Huawei Cloud authentication credentials for hcloud CLI.
+Configure Huawei Cloud authentication credentials for Huawei Cloud CLI (KooCLI).
+
+The CLI tool (hcloud) is part of KooCLI. Download from: https://support.huaweicloud.com/intl/en-us/qs-hcli/hcli_02_003.html
 
 ## Usage
 
