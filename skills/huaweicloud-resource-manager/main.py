@@ -11,10 +11,12 @@ import sys
 import time
 import json
 import logging
+import random
 from datetime import datetime
 from typing import List, Dict, Any, Optional
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from threading import Lock
 
 # Add tools directory to path
 tools_dir = Path(__file__).parent / "tools"
@@ -226,6 +228,11 @@ def scan_eips(regions: Optional[List[str]] = None) -> List[Dict[str, Any]]:
     return eips
 
 
+# Lock for thread-safe logging
+_scan_lock = Lock()
+_scan_counter = 0
+
+
 def _scan_single_region(region: str) -> Dict[str, Any]:
     """
     Scan a single region with all resource types.
@@ -237,7 +244,16 @@ def _scan_single_region(region: str) -> Dict[str, Any]:
     Returns:
         Dictionary containing scan results for the region
     """
-    logger.info(f"Scanning region: {region}")
+    global _scan_counter
+
+    # Add staggered delay to avoid concurrent API storm
+    # Each region starts with 0.5-1.5s delay to spread out requests
+    with _scan_lock:
+        _scan_counter += 1
+        delay = random.uniform(0.5, 1.5)
+    time.sleep(delay)
+
+    logger.info(f"Scanning region: {region} (after {delay:.2f}s delay)")
     region_result = {
         "region": region,
         "vpc_analysis": [],

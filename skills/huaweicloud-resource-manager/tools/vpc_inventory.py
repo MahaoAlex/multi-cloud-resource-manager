@@ -37,12 +37,13 @@ def validate_env() -> None:
         raise ValueError(f"Missing required environment variables: {', '.join(missing)}")
 
 
-def parse_hcloud_output(stdout: str) -> Optional[Dict[str, Any]]:
+def parse_hcloud_output(stdout: str, stderr: str = "") -> Optional[Dict[str, Any]]:
     """
     Parse hcloud CLI output, filtering out API version warnings.
 
     Args:
         stdout: Raw stdout from hcloud command
+        stderr: Raw stderr from hcloud command (for diagnostics)
 
     Returns:
         Parsed JSON response or None if parsing fails
@@ -61,13 +62,19 @@ def parse_hcloud_output(stdout: str) -> Optional[Dict[str, Any]]:
             json_lines.append(line)
 
         if not json_lines:
+            # Check if there's any content at all
+            if not stdout.strip():
+                logger.warning("Empty output from hcloud command")
+                if stderr:
+                    logger.debug(f"Stderr: {stderr[:500]}")
             return None
 
         json_content = '\n'.join(json_lines)
         return json.loads(json_content)
     except json.JSONDecodeError as e:
-        logger.error(f"Failed to parse JSON output: {e}")
-        logger.debug(f"Raw output: {stdout[:500]}")
+        logger.warning(f"Failed to parse JSON output: {e}")
+        logger.debug(f"Raw stdout: {stdout[:500]}")
+        logger.debug(f"Raw stderr: {stderr[:500] if stderr else 'None'}")
         return None
 
 
@@ -117,7 +124,7 @@ def run_hcloud_command(
             logger.error(f"Error: {result.stderr}")
             return None
 
-        return parse_hcloud_output(result.stdout)
+        return parse_hcloud_output(result.stdout, result.stderr)
 
     except subprocess.TimeoutExpired:
         logger.error(f"Command timeout: {' '.join(command)}")
