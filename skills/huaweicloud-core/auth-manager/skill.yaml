@@ -1,0 +1,37 @@
+name: auth-manager
+description: Huawei Cloud authentication management. Configures Access Key, Secret Key, and regions. Supports multi-region setup and validates credentials before use.
+version: 1.0.0
+
+tools:
+  - name: configure_auth
+    description: Configure Huawei Cloud authentication credentials
+    input_schema:
+      type: object
+      properties:
+        access_key_id:
+          type: string
+          description: Huawei Cloud Access Key ID
+        secret_access_key:
+          type: string
+          description: Huawei Cloud Secret Access Key
+        regions:
+          type: string
+          description: Comma-separated region IDs or 'all' for all regions
+        project_id:
+          type: string
+          description: Optional project ID for multi-project accounts
+    handler: auth_manager.configure_auth
+
+  - name: validate_auth
+    description: Validate current authentication credentials against all configured regions
+    input_schema:
+      type: object
+      properties: {}
+    handler: auth_manager.validate_auth
+
+  - name: show_auth_status
+    description: Display current authentication status (masked credentials)
+    input_schema:
+      type: object
+      properties: {}
+    handler: auth_manager.show_auth_status

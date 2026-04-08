@@ -1,0 +1,24 @@
+# Naming Convention Rules for Huawei Cloud Resource Manager
+# These rules check resource naming compliance
+
+rules:
+  - id: "ecs-naming-convention"
+    name: "ECS Naming Convention Check"
+    resource: "ecs"
+    condition: "name !~ /\d{6,}/"
+    severity: "warning"
+    description: "ECS instance name must contain employee ID (at least 6 consecutive digits)"
+
+  - id: "vpc-naming-convention"
+    name: "VPC Naming Convention Check"
+    resource: "vpc"
+    condition: "name !~ /^(prod|dev|test|staging)-/"
+    severity: "info"
+    description: "VPC name should start with environment prefix (prod-, dev-, test-, staging-)"
+
+  - id: "security-group-naming"
+    name: "Security Group Naming Convention"
+    resource: "security_group"
+    condition: "name !~ /^(sg-|secgroup-)/"
+    severity: "info"
+    description: "Security group name should start with sg- or secgroup- prefix"

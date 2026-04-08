@@ -1,0 +1,52 @@
+# Security Rules for Huawei Cloud Resource Manager
+# These rules detect security risks and violations
+
+rules:
+  - id: "sg-high-risk-ports"
+    name: "High Risk Port Exposure"
+    resource: "security_group"
+    condition: "ports contains [22,33,44] and source = 0.0.0.0/0"
+    severity: "critical"
+    description: "Security group has high-risk ports (22, 33, 44) open to internet (0.0.0.0/0)"
+
+  - id: "sg-ssh-open"
+    name: "SSH Port Open to Internet"
+    resource: "security_group"
+    condition: "ports contains [22] and source = 0.0.0.0/0"
+    severity: "critical"
+    description: "SSH (port 22) is open to the entire internet"
+
+  - id: "obs-public-bucket"
+    name: "Public OBS Bucket"
+    resource: "obs_bucket"
+    condition: "permission = public-read or permission = public-read-write"
+    severity: "high"
+    description: "OBS bucket has public access enabled"
+
+  - id: "obs-public-object"
+    name: "Public OBS Object"
+    resource: "obs_object"
+    condition: "permission = public-read"
+    severity: "high"
+    description: "OBS object is publicly accessible"
+
+  - id: "unattached-eip"
+    name: "Unattached Elastic IP"
+    resource: "eip"
+    condition: "status = unattached"
+    severity: "info"
+    description: "Elastic IP is not attached to any resource"
+
+  - id: "low-cpu-usage"
+    name: "Low CPU Utilization"
+    resource: "ecs"
+    condition: "cpu_avg_24h < 10"
+    severity: "info"
+    description: "ECS instance has average CPU utilization below 10% over last 24 hours"
+
+  - id: "unused-vpc"
+    name: "Unused VPC"
+    resource: "vpc"
+    condition: "status = unused"
+    severity: "warning"
+    description: "VPC has no active resources and appears to be unused"

@@ -1,0 +1,34 @@
+name: proxy-injection
+description: Interactive proxy configuration for Huawei Cloud CLI. Configures HTTP_PROXY, HTTPS_PROXY, and NO_PROXY environment variables for the current session only.
+version: 1.0.0
+
+tools:
+  - name: configure_proxy
+    description: Configure proxy settings for Huawei Cloud CLI
+    input_schema:
+      type: object
+      properties:
+        http_proxy:
+          type: string
+          description: HTTP proxy URL (e.g., http://proxy.company.com:8080)
+        https_proxy:
+          type: string
+          description: HTTPS proxy URL (e.g., http://proxy.company.com:8080)
+        no_proxy:
+          type: string
+          description: Comma-separated list of hosts to bypass proxy
+    handler: proxy_injection.configure_proxy
+
+  - name: show_proxy
+    description: Display current proxy configuration
+    input_schema:
+      type: object
+      properties: {}
+    handler: proxy_injection.show_proxy
+
+  - name: clear_proxy
+    description: Clear all proxy settings for current session
+    input_schema:
+      type: object
+      properties: {}
+    handler: proxy_injection.clear_proxy
