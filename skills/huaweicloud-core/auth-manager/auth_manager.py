@@ -117,9 +117,9 @@ def parse_regions(regions_input: str) -> List[str]:
     return unique_regions if unique_regions else DEFAULT_REGIONS
 
 
-def get_project_id(access_key: str, secret_key: str, region: str) -> Optional[str]:
+def list_projects(access_key: str, secret_key: str, region: str) -> List[Dict[str, str]]:
     """
-    Try to discover project ID from IAM API.
+    List all available projects from IAM API.
 
     Args:
         access_key: Access Key ID
@@ -127,27 +127,22 @@ def get_project_id(access_key: str, secret_key: str, region: str) -> Optional[st
         region: Region ID
 
     Returns:
-        Project ID if found, None otherwise
+        List of project dictionaries with 'id', 'name', and 'description'
     """
     try:
-        env = os.environ.copy()
-        env['HWCLOUD_ACCESS_KEY'] = access_key
-        env['HWCLOUD_SECRET_KEY'] = secret_key
-
         # Query IAM for projects
         result = subprocess.run(
             ['hcloud', 'IAM', 'KeystoneListAuthProjects',
              f'--cli-access-key={access_key}',
              f'--cli-secret-key={secret_key}',
              f'--cli-region={region}'],
-            env=env,
             capture_output=True,
             text=True,
             timeout=30
         )
 
         if result.returncode == 0:
-            # Parse output to extract project ID
+            # Parse output to extract projects
             output_lines = result.stdout.strip().split('\n')
             json_lines = []
             for line in output_lines:
@@ -158,20 +153,81 @@ def get_project_id(access_key: str, secret_key: str, region: str) -> Optional[st
                 try:
                     data = json.loads('\n'.join(json_lines))
                     projects = data.get('projects', [])
-                    if projects:
-                        # Find the default project for this region
-                        for proj in projects:
-                            if region in proj.get('name', ''):
-                                return proj.get('id')
-                        # Return first project if no match
-                        return projects[0].get('id')
+                    # Format projects for display
+                    formatted = []
+                    for proj in projects:
+                        formatted.append({
+                            'id': proj.get('id', ''),
+                            'name': proj.get('name', ''),
+                            'description': proj.get('description', '')
+                        })
+                    return formatted
                 except json.JSONDecodeError:
                     pass
 
-        return None
+        return []
 
     except Exception:
+        return []
+
+
+def select_project(projects: List[Dict[str, str]]) -> Optional[str]:
+    """
+    Interactive project selection.
+
+    Args:
+        projects: List of project dictionaries
+
+    Returns:
+        Selected project ID or None
+    """
+    if not projects:
         return None
+
+    print()
+    print("Available projects:")
+    print("-" * 70)
+    print(f"{'No.':<4} {'Project Name':<25} {'Project ID':<40}")
+    print("-" * 70)
+
+    for i, proj in enumerate(projects[:20], 1):  # Show up to 20 projects
+        name = proj.get('name', 'Unknown')[:24]
+        proj_id = proj.get('id', '')
+        # Mask most of the project ID for display
+        display_id = f"{proj_id[:8]}...{proj_id[-8:]}" if len(proj_id) > 16 else proj_id
+        print(f"{i:<4} {name:<25} {display_id:<40}")
+
+    print("-" * 70)
+    print("Options:")
+    print(f"  1-{min(len(projects), 20)} : Select a project from the list")
+    print("  0   : Enter Project ID manually")
+    print("  s   : Skip Project ID configuration")
+    print()
+
+    while True:
+        choice = input("Select option [0/s/1-{}]: ".format(min(len(projects), 20))).strip().lower()
+
+        if choice == 's' or choice == '':
+            return None
+
+        if choice == '0':
+            manual_id = input("Enter Project ID: ").strip()
+            if len(manual_id) >= 32:
+                return manual_id
+            else:
+                print("Invalid Project ID format. Expected 32-character hex string.")
+                continue
+
+        try:
+            idx = int(choice) - 1
+            if 0 <= idx < len(projects):
+                selected = projects[idx]
+                print(f"Selected: {selected.get('name')} ({selected.get('id', '')[:8]}...)")
+                return selected.get('id')
+            else:
+                print(f"Invalid selection. Please enter 1-{min(len(projects), 20)}, 0, or s.")
+        except ValueError:
+            print(f"Invalid input. Please enter 1-{min(len(projects), 20)}, 0, or s.")
 
 
 def validate_region(access_key: str, secret_key: str, region: str, project_id: str = None) -> Tuple[bool, Optional[str]]:
@@ -266,17 +322,6 @@ def configure_auth(access_key: str, secret_key: str, regions: List[str], project
         result["errors"].append(f"Secret Key: {sk_error}")
         return result
 
-    # Try to auto-discover project ID if not provided
-    if not project_id and regions:
-        print("  Attempting to discover Project ID...")
-        discovered = get_project_id(access_key, secret_key, regions[0])
-        if discovered:
-            print(f"  Discovered Project ID: {discovered}")
-            project_id = discovered
-            result["project_id"] = project_id
-        else:
-            print("  Could not auto-discover Project ID.")
-
     # Validate credentials against each region
     print("\nValidating credentials...")
     for region in regions:
@@ -343,9 +388,6 @@ def interactive_auth_setup():
     print("Configure authentication credentials for hcloud CLI.")
     print("Your credentials will be validated before being applied.")
     print()
-    print("NOTE: For IAM sub-users, Project ID is required.")
-    print("      Main account users can leave Project ID blank.")
-    print()
 
     # Show current configuration
     current = get_current_auth_config()
@@ -380,13 +422,28 @@ def interactive_auth_setup():
 
     regions = parse_regions(regions_input if regions_input else ','.join(DEFAULT_REGIONS))
 
-    # Project ID - strongly recommended for IAM sub-users
+    # Project ID selection
     print()
-    print("Project ID:")
+    print("Project ID Configuration:")
     print("  - Required for IAM sub-users")
     print("  - Optional for main account users")
-    print("  - Format: 32-character hex string (e.g., b6c0fd8b70114e2fad507fb0f2f39227)")
-    project_id = input("Project ID (press Enter to skip): ").strip()
+    print()
+
+    project_id = None
+    use_first_region = regions[0] if regions else DEFAULT_REGIONS[0]
+
+    print(f"Querying available projects for region '{use_first_region}'...")
+    projects = list_projects(access_key, secret_key, use_first_region)
+
+    if projects:
+        print(f"Found {len(projects)} project(s).")
+        project_id = select_project(projects)
+    else:
+        print("Could not retrieve project list automatically.")
+        print()
+        manual = input("Enter Project ID manually (press Enter to skip): ").strip()
+        if manual:
+            project_id = manual
 
     print()
 
@@ -395,7 +452,7 @@ def interactive_auth_setup():
         access_key=access_key,
         secret_key=secret_key,
         regions=regions,
-        project_id=project_id if project_id else None
+        project_id=project_id
     )
 
     # Display results
@@ -409,6 +466,10 @@ def interactive_auth_setup():
                 print(f"  {var}={result['masked_access_key']}")
             elif var == 'HWCLOUD_SECRET_KEY':
                 print(f"  {var}=****************")
+            elif var == 'HWCLOUD_PROJECT_ID' and result.get('project_id'):
+                pid = result['project_id']
+                masked_pid = f"{pid[:8]}...{pid[-8:]}" if len(pid) > 16 else mask_string(pid)
+                print(f"  {var}={masked_pid}")
             else:
                 print(f"  {var}={os.environ.get(var, '')}")
 
