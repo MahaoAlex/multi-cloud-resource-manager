@@ -69,7 +69,8 @@ rm -rf multi-cloud-resource-manager
 │   └── proxy_injection.py
 ├── auth-manager/
 │   ├── skill.yaml
-│   └── auth_manager.py
+│   ├── auth_manager.py
+│   └── secure_runner.py
 └── huaweicloud-resource-manager/
     ├── skill.yaml
     ├── main.py
@@ -132,11 +133,11 @@ Claude: 我来帮你配置华为云 CLI 的代理设置。
 注意：这些设置仅在当前会话有效。
 ```
 
-### 3.3 测试 auth-manager Skill
+### 3.3 测试 auth-manager Skill（安全方式）
 
-**场景：配置华为云认证信息**
+**场景：配置华为云认证信息（推荐方式）**
 
-在 Claude Code 中输入：
+使用交互式配置，避免凭证出现在命令历史中：
 
 ```
 配置华为云认证
@@ -351,7 +352,7 @@ Claude: 开始检查 ECS 资源优化情况...
 正在生成报告...
 ```
 
-### 3.8 测试完整扫描
+### 3.8 测试完整扫描（并发扫描）
 
 **场景：执行完整资源扫描**
 
@@ -364,7 +365,7 @@ Claude: 开始检查 ECS 资源优化情况...
 或使用命令模式：
 
 ```
-/huaweicloud-scan --regions=all --mode=manual
+/huaweicloud-scan full_scan --regions=["cn-north-4","cn-south-1"] --max_workers=3
 ```
 
 预期交互：
@@ -376,48 +377,39 @@ Claude: 开始执行完整的华为云资源扫描...
 ═══════════════════════════════════════════════
 
 扫描区域: cn-north-4, cn-south-1, cn-east-2
+并发数: 3 workers
 扫描类型: manual
 开始时间: 2026-04-08 14:40:00
 
 ───────────────────────────────────────────────
-[1/5] VPC 盘点与使用分析
+[1/3] 并发扫描区域: cn-north-4 (延迟 0.6s)
 ───────────────────────────────────────────────
-[1/3] cn-north-4: 发现 8 VPC, 2 未使用 [OK]
-[2/3] cn-south-1: 发现 5 VPC, 1 未使用 [OK]
-[3/3] cn-east-2: 发现 3 VPC, 0 未使用 [OK]
-VPC 扫描完成: 总计 16 VPC, 3 未使用
+  - VPC 盘点: 8 个 VPC, 2 未使用
+  - 安全组: 3 个高危配置
+  - OBS: 2 个公开存储桶
+  - ECS: 3 个低利用率, 2 个命名违规
+  - EIP: 2 个未挂载
+  [OK] 完成 (45s)
 
 ───────────────────────────────────────────────
-[2/5] 安全组风险扫描
+[2/3] 并发扫描区域: cn-south-1 (延迟 1.1s)
 ───────────────────────────────────────────────
-[1/3] cn-north-4: 发现 3 个高危配置 [WARN]
-[2/3] cn-south-1: 发现 1 个高危配置 [WARN]
-[3/3] cn-east-2: 未发现风险 [OK]
-安全扫描完成: 总计 4 个高危配置
+  - VPC 盘点: 5 个 VPC, 1 未使用
+  - 安全组: 1 个高危配置
+  - OBS: 未发现异常
+  - ECS: 1 个低利用率
+  - EIP: 1 个未挂载
+  [OK] 完成 (42s)
 
 ───────────────────────────────────────────────
-[3/5] OBS 公开访问检测
+[3/3] 并发扫描区域: cn-east-2 (延迟 0.8s)
 ───────────────────────────────────────────────
-[1/3] cn-north-4: 发现 2 个公开存储桶 [WARN]
-[2/3] cn-south-1: 未发现异常 [OK]
-[3/3] cn-east-2: 未发现异常 [OK]
-OBS 扫描完成: 总计 2 个公开存储桶
-
-───────────────────────────────────────────────
-[4/5] ECS 资源优化检查
-───────────────────────────────────────────────
-[1/3] cn-north-4: 3 个低利用率, 2 个命名违规 [WARN]
-[2/3] cn-south-1: 1 个低利用率 [WARN]
-[3/3] cn-east-2: 无异常 [OK]
-ECS 扫描完成: 4 个低利用率, 2 个命名违规
-
-───────────────────────────────────────────────
-[5/5] EIP 未挂载检测
-───────────────────────────────────────────────
-[1/3] cn-north-4: 发现 2 个未挂载 EIP [WARN]
-[2/3] cn-south-1: 发现 1 个未挂载 EIP [WARN]
-[3/3] cn-east-2: 无异常 [OK]
-EIP 扫描完成: 总计 3 个未挂载 EIP
+  - VPC 盘点: 3 个 VPC, 0 未使用
+  - 安全组: 未发现风险
+  - OBS: 未发现异常
+  - ECS: 无异常
+  - EIP: 无异常
+  [OK] 完成 (38s)
 
 ═══════════════════════════════════════════════
   扫描完成 - 汇总报告
@@ -428,6 +420,7 @@ EIP 扫描完成: 总计 3 个未挂载 EIP
 │ 指标                  │ 数量   │
 ├──────────────────────┼────────┤
 │ 扫描区域              │ 3      │
+│ 并发 Workers          │ 3      │
 │ 总 VPC 数            │ 16     │
 │ 未使用 VPC           │ 3      │
 │ 安全高危配置          │ 4      │
@@ -478,12 +471,99 @@ EIP 扫描完成: 总计 3 个未挂载 EIP
 - JSON: ./reports/2026-04-08/manual_14-40-00.json
 - Markdown: ./reports/2026-04-08/manual_14-40-00.md
 
-扫描用时: 125 秒
+扫描用时: 52 秒 (并发扫描节省约 58% 时间)
 ```
 
-## 四、定时巡检配置
+## 四、性能优化与并发扫描
 
-### 4.1 Cron 定时任务
+### 4.1 并发扫描说明
+
+完整扫描（full_scan）支持并发扫描多个区域，可显著减少总扫描时间。
+
+**并发原理：**
+- 每个区域由独立的 worker 线程扫描
+- 默认最大并发数：5（可配置范围 1-5）
+- 每个 worker 启动时有 0.5-1.5s 随机延迟，避免 API 限流
+- 扫描操作为只读，并发执行安全
+
+**使用建议：**
+
+| 场景 | 推荐并发数 | 说明 |
+|------|-----------|------|
+| 1-3 个区域 | 3 | 平衡速度与稳定性 |
+| 4-10 个区域 | 5 | 最大化并发效率 |
+| 网络不稳定 | 2 | 降低并发避免超时 |
+| API 限流 | 1 | 串行扫描 |
+
+### 4.2 并发扫描参数
+
+```
+/huaweicloud-scan full_scan \
+  --regions=["cn-north-4","cn-south-1","cn-east-2"] \
+  --max_workers=3 \
+  --scan_type="manual"
+```
+
+参数说明：
+- `regions`: 要扫描的区域列表
+- `max_workers`: 并发 worker 数量（1-5，默认 5）
+- `scan_type`: manual 或 scheduled
+
+### 4.3 性能对比
+
+假设扫描 5 个区域，每个区域耗时约 40 秒：
+
+| 扫描方式 | Workers | 预计耗时 | 时间节省 |
+|---------|---------|---------|---------|
+| 串行扫描 | 1 | ~200 秒 | - |
+| 低并发 | 2 | ~100 秒 | 50% |
+| 默认并发 | 5 | ~45 秒 | 78% |
+
+## 五、安全凭证配置
+
+### 5.1 安全配置方式（推荐）
+
+使用交互式配置，避免凭证出现在 shell 历史中：
+
+```bash
+# 方式一：使用 Claude Code Skill
+配置华为云认证
+
+# 方式二：使用安全脚本
+python skills/huaweicloud-core/auth-manager/secure_runner.py --setup
+
+# 方式三：使用交互式输入
+read -s HWCLOUD_ACCESS_KEY
+read -s HWCLOUD_SECRET_KEY
+export HWCLOUD_ACCESS_KEY HWCLOUD_SECRET_KEY
+```
+
+### 5.2 不安全的配置方式（避免使用）
+
+```bash
+# 以下方式会在 shell 历史中留下凭证记录！
+export HWCLOUD_ACCESS_KEY="HPUA0AEHXL3JK6PVYUDD"
+export HWCLOUD_SECRET_KEY="DDpL6T4vUkHQ7vg8aRAakN1LwTNMAy0royPv1ajz"
+
+# 清理历史记录
+history -c
+```
+
+### 5.3 凭证验证
+
+配置完成后验证：
+
+```bash
+# 方式一
+python skills/huaweicloud-core/auth-manager/secure_runner.py --verify
+
+# 方式二
+/huaweicloud-scan show_auth_status
+```
+
+## 六、定时巡检配置
+
+### 6.1 Cron 定时任务
 
 每小时执行一次巡检：
 
@@ -491,11 +571,21 @@ EIP 扫描完成: 总计 3 个未挂载 EIP
 # 编辑 crontab
 crontab -e
 
-# 添加以下行
-0 * * * * cd /path/to/project && claude "/huaweicloud-scan --mode=scheduled --regions=all" >> /var/log/huaweicloud-scan.log 2>&1
+# 添加以下行（注意：需要先配置环境变量或使用包装脚本）
+0 * * * * cd /path/to/project && source /path/to/env.sh && claude "/huaweicloud-scan --mode=scheduled --regions=all" >> /var/log/huaweicloud-scan.log 2>&1
 ```
 
-### 4.2 Airflow DAG
+**安全建议**：不要在 crontab 中直接写 AK/SK，使用环境变量文件：
+
+```bash
+# /path/to/env.sh
+export HWCLOUD_ACCESS_KEY="${HWCLOUD_ACCESS_KEY}"
+export HWCLOUD_SECRET_KEY="${HWCLOUD_SECRET_KEY}"
+export HWCLOUD_REGIONS="cn-north-4,cn-south-1"
+chmod 600 /path/to/env.sh
+```
+
+### 6.2 Airflow DAG
 
 ```python
 from airflow import DAG
@@ -523,15 +613,15 @@ with DAG(
 
     scan_task = BashOperator(
         task_id='resource_scan',
-        bash_command='cd /path/to/project && claude "/huaweicloud-scan --mode=scheduled --regions=all"',
+        bash_command='source /path/to/env.sh && claude "/huaweicloud-scan --mode=scheduled --regions=all --max_workers=3"',
     )
 
     scan_task
 ```
 
-## 五、报告查看与处理
+## 七、报告查看与处理
 
-### 5.1 查看报告
+### 7.1 查看报告
 
 ```bash
 # 查看 Markdown 报告
@@ -539,9 +629,12 @@ cat ./reports/2026-04-08/manual_14-40-00.md
 
 # 查看 JSON 报告
 cat ./reports/2026-04-08/scheduled_15-00-00.json | jq
+
+# 查找最新报告
+ls -lt ./reports/*/manual_*.md | head -1
 ```
 
-### 5.2 集成到 IM 通知
+### 7.2 集成到 IM 通知
 
 示例：将报告发送到钉钉/飞书
 
@@ -559,24 +652,25 @@ def send_report(report_file):
     with open(report_file) as f:
         data = json.load(f)
     
-    summary = data['summary']['total']
+    summary = data['summary']
     
     message = {
         "msgtype": "markdown",
         "markdown": {
             "title": "华为云资源巡检报告",
             "text": f"""### 华为云资源巡检报告
-**扫描时间**: {data['scan_metadata']['timestamp']}
-**扫描区域**: {', '.join(data['scan_metadata']['regions'])}
+**扫描时间**: {data.get('timestamp', 'N/A')}
+**扫描区域**: {', '.join(data.get('regions', []))}
+**扫描用时**: {data.get('duration_seconds', 0)} 秒
 
 **汇总统计**:
-- VPC 总数: {summary['vpcs']} (未使用: {summary['unused_vpcs']})
-- 安全问题: {summary['security_issues']}
-- 公开 OBS: {summary['public_obs_buckets']}
-- 低利用率 ECS: {summary['low_utilization_ecs']}
-- 未挂载 EIP: {summary['unattached_eips']}
+- VPC 总数: {summary.get('vpcs', 0)} (未使用: {summary.get('unused_vpcs', 0)})
+- 安全问题: {summary.get('security_issues', 0)}
+- 公开 OBS: {summary.get('public_obs_buckets', 0)}
+- 低利用率 ECS: {summary.get('low_utilization_ecs', 0)}
+- 未挂载 EIP: {summary.get('unattached_eips', 0)}
 
-**待处理事项**: {len(data['action_items'])} 项
+**严重问题**: {summary.get('security_issues', 0)} 项需立即处理
 
 [点击查看详情](http://your-report-server/reports/)
 """
@@ -589,9 +683,9 @@ if __name__ == "__main__":
     send_report(sys.argv[1])
 ```
 
-## 六、自定义规则
+## 八、自定义规则
 
-### 6.1 创建自定义规则文件
+### 8.1 创建自定义规则文件
 
 在项目目录创建 `./rules/custom-rules.yaml`：
 
@@ -610,15 +704,28 @@ rules:
     condition: "name !~ /-(dev|prod|test|staging)-/"
     severity: "info"
     description: "VPC 名称应包含环境标识 (dev/prod/test/staging)"
+
+  - id: "custom-obs-encryption"
+    name: "OBS Bucket Encryption"
+    resource: "obs"
+    condition: "encryption_status == 'disabled'"
+    severity: "high"
+    description: "OBS 存储桶应启用加密"
 ```
 
-### 6.2 规则生效
+### 8.2 规则生效
 
 自定义规则会自动生效，优先级高于内置规则。
 
-## 七、故障排查
+### 8.3 列出所有规则
 
-### 7.1 常见问题
+```
+/huaweicloud-scan list_rules
+```
+
+## 九、故障排查
+
+### 9.1 常见问题
 
 **Q: hcloud 命令找不到**
 ```bash
@@ -631,13 +738,29 @@ export PATH=$PATH:/usr/local/bin
 
 **Q: 认证失败**
 ```bash
-# 检查环境变量
-echo $HWCLOUD_ACCESS_KEY
-echo $HWCLOUD_SECRET_KEY
-echo $HWCLOUD_REGIONS
+# 检查环境变量是否设置（已脱敏显示）
+echo "AK: ${HWCLOUD_ACCESS_KEY:0:4}****${HWCLOUD_ACCESS_KEY: -4}"
+echo "SK: ${HWCLOUD_SECRET_KEY:0:4}****${HWCLOUD_SECRET_KEY: -4}"
+echo "Regions: $HWCLOUD_REGIONS"
 
 # 手动测试 hcloud 连接
-hcloud vpc ListVpcs --region=cn-north-4
+hcloud VPC ListVpcs --cli-region=cn-north-4
+```
+
+**Q: 并发扫描时出现 "Failed to parse JSON output" 警告**
+
+这是正常现象，可能原因：
+1. 某些区域没有特定资源（如没有 ECS 实例）
+2. API 响应包含警告信息而非纯 JSON
+3. 并发请求导致短暂超时
+
+解决方案：
+```bash
+# 降低并发数
+/huaweicloud-scan full_scan --max_workers=2
+
+# 或串行扫描
+/huaweicloud-scan full_scan --max_workers=1
 ```
 
 **Q: 代理连接失败**
@@ -649,22 +772,46 @@ curl -x http://proxy:8080 https://myhuaweicloud.com
 echo $NO_PROXY
 ```
 
-### 7.2 调试模式
+**Q: 扫描超时**
+```bash
+# 减少扫描区域
+/huaweicloud-scan full_scan --regions=["cn-north-4"]
 
-在 Claude Code 中启用详细日志：
-
+# 降低并发数
+/huaweicloud-scan full_scan --max_workers=2
 ```
-/huaweicloud-scan --debug
+
+### 9.2 调试模式
+
+启用详细日志：
+
+```bash
+# 设置日志级别
+export LOG_LEVEL=DEBUG
+
+# 或在 Claude Code 中
+/huaweicloud-scan full_scan --debug
 ```
 
-## 八、安全注意事项
+### 9.3 查看执行日志
 
-### 8.1 凭证保护
-- AK/SK 仅存储在环境变量中
-- 不要提交到 Git 仓库
-- 定期轮换凭证
+```bash
+# 查看最近的错误
+grep -i error ./reports/*/manual_*.json | tail -20
 
-### 8.2 防止凭证泄露到命令历史
+# 查看特定区域的日志
+/huaweicloud-scan scan_vpcs --regions=["cn-north-4"] --verbose
+```
+
+## 十、安全注意事项
+
+### 10.1 凭证保护
+- AK/SK 仅存储在环境变量中，不写入文件
+- 不要提交到 Git 仓库（已添加 .gitignore）
+- 定期轮换凭证（建议 90 天）
+- 使用最小权限原则的 IAM 账号
+
+### 10.2 防止凭证泄露到命令历史
 
 **问题**: 在命令行中直接设置环境变量会导致 AK/SK 出现在 shell 历史记录中：
 ```bash
@@ -672,54 +819,94 @@ echo $NO_PROXY
 export HWCLOUD_ACCESS_KEY="your-secret-key"
 ```
 
-**解决方案**: 使用交互式配置工具（推荐）
-```bash
-# 方式一：使用 auth-manager skill 的交互式配置
-配置华为云认证
+**解决方案**: 
 
-# 方式二：使用提供的安全脚本
-python skills/huaweicloud-core/auth-manager/secure_runner.py --setup
+1. **使用 Claude Code Skill（推荐）**
+   ```
+   配置华为云认证
+   ```
+
+2. **使用安全脚本**
+   ```bash
+   python skills/huaweicloud-core/auth-manager/secure_runner.py --setup
+   ```
+
+3. **使用环境变量文件**
+   ```bash
+   # .env 文件（权限 600）
+   source .env
+   ```
+
+4. **定期清理历史**
+   ```bash
+   history -c
+   ```
+
+### 10.3 报告安全
+- 报告文件包含资源信息，注意访问控制
+- 建议设置报告目录权限：`chmod 700 ./reports`
+- 定期清理历史报告（默认保留 7 天）
+- 不要将报告提交到 Git
+
+### 10.4 操作安全
+- 所有扫描操作均为只读，不会修改资源
+- 删除操作需要人工确认
+- 生产环境建议先测试单个区域
+- 建议在非工作时间执行全面扫描
+
+## 十一、附录
+
+### 11.1 支持的华为云服务
+
+| 服务 | 检测内容 | API 权限要求 |
+|------|----------|-------------|
+| VPC | 资源枚举、使用分析 | VPC ReadOnly |
+| ECS | CPU 利用率、命名规范 | ECS ReadOnly, CES ReadOnly |
+| OBS | 公开存储桶、公开对象 | OBS ReadOnly |
+| EIP | 未挂载检测 | VPC ReadOnly |
+| Security Group | 高危端口开放 | VPC ReadOnly |
+
+### 11.2 华为云 CLI 注意事项
+
+**hcloud 版本检查**：
+```bash
+# 正确方式（hcloud 不支持 --version）
+hcloud --help > /dev/null 2>&1 && echo "installed"
+
+# 错误方式（会报错）
+hcloud --version  # 不支持！
 ```
 
-**其他安全建议**:
-- 使用 `getpass` 等工具输入敏感信息
-- 避免在命令行参数中传递 AK/SK
-- 定期清理 shell 历史：`history -c`
-
-### 8.3 报告安全
-- 报告文件包含资源信息，注意访问控制
-- 定期清理历史报告（默认保留7天）
-
-### 8.4 操作安全
-- 所有扫描操作均为只读
-- 删除操作需要人工确认
-- 生产环境建议先测试
-
-## 九、附录
-
-### 9.1 支持的华为云服务
-
-| 服务 | 检测内容 |
-|------|----------|
-| VPC | 资源枚举、使用分析 |
-| ECS | CPU 利用率、命名规范 |
-| OBS | 公开存储桶、公开对象 |
-| EIP | 未挂载检测 |
-| Security Group | 高危端口开放 |
-
-### 9.2 工号命名规范
+### 11.3 工号命名规范
 
 - 要求：ECS 名称包含至少 6 位连续数字
 - 匹配：`user-00123456-web`、`test123456vm`
 - 不匹配：`web-server`、`test12345`
 
-### 9.3 高危端口定义
+### 11.4 高危端口定义
 
-- 22: SSH 远程登录
-- 33: 未使用端口（常被滥用）
-- 44: 未使用端口（常被滥用）
+| 端口 | 服务 | 风险等级 |
+|------|------|---------|
+| 22 | SSH 远程登录 | Critical |
+| 3389 | RDP 远程桌面 | Critical |
+| 3306 | MySQL | High |
+| 5432 | PostgreSQL | High |
+| 6379 | Redis | High |
+| 27017 | MongoDB | High |
+
+### 11.5 环境变量参考
+
+| 变量名 | 必需 | 说明 |
+|--------|------|------|
+| HWCLOUD_ACCESS_KEY | 是 | Access Key ID |
+| HWCLOUD_SECRET_KEY | 是 | Secret Access Key |
+| HWCLOUD_REGIONS | 是 | 扫描区域，逗号分隔 |
+| HWCLOUD_PROJECT_ID | 否 | IAM 子用户需要 |
+| HTTP_PROXY | 否 | HTTP 代理 |
+| HTTPS_PROXY | 否 | HTTPS 代理 |
+| NO_PROXY | 否 | 代理例外地址 |
 
 ---
 
-**文档版本**: 1.0
+**文档版本**: 2.0
 **更新日期**: 2026-04-08
