@@ -1,0 +1,31 @@
+# Naming Convention Rules for Aliyun Resource Manager
+# Define rules for resource naming compliance
+
+rules:
+  - id: ecs-naming-convention
+    name: ECS Instance Naming Convention
+    resource: ecs
+    condition: 'name !~ /\\d{6,}/'
+    severity: warning
+    description: ECS instance name should contain at least 6 consecutive digits (employee ID)
+
+  - id: vpc-naming-convention
+    name: VPC Naming Convention
+    resource: vpc
+    condition: 'name !~ /^(prod|dev|test|staging)-/'
+    severity: info
+    description: VPC name should start with environment prefix (prod, dev, test, staging)
+
+  - id: security-group-description
+    name: Security Group Missing Description
+    resource: security_group
+    condition: 'description = ""'
+    severity: info
+    description: Security group should have a description
+
+  - id: oss-bucket-naming
+    name: OSS Bucket Naming Convention
+    resource: oss_bucket
+    condition: 'name !~ /^(company|org)-/'
+    severity: info
+    description: OSS bucket name should start with company or org prefix

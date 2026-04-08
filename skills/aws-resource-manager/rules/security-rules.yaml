@@ -1,0 +1,73 @@
+# Security Rules for AWS Resource Manager
+# Define rules for detecting security issues
+
+rules:
+  - id: sg-ssh-open-internet
+    name: SSH Port Open to Internet
+    resource: security_group
+    condition: 'ports contains [22] and source = 0.0.0.0/0'
+    severity: critical
+    description: Security group allows SSH (port 22) access from any IP address
+
+  - id: sg-ftp-open-internet
+    name: FTP Ports Open to Internet
+    resource: security_group
+    condition: 'ports contains [21] and source = 0.0.0.0/0'
+    severity: high
+    description: Security group allows FTP access from any IP address
+
+  - id: sg-rdp-open-internet
+    name: RDP Port Open to Internet
+    resource: security_group
+    condition: 'ports contains [3389] and source = 0.0.0.0/0'
+    severity: critical
+    description: Security group allows RDP access from any IP address
+
+  - id: sg-mysql-open-internet
+    name: MySQL Port Open to Internet
+    resource: security_group
+    condition: 'ports contains [3306] and source = 0.0.0.0/0'
+    severity: critical
+    description: Security group allows MySQL access from any IP address
+
+  - id: sg-postgres-open-internet
+    name: PostgreSQL Port Open to Internet
+    resource: security_group
+    condition: 'ports contains [5432] and source = 0.0.0.0/0'
+    severity: critical
+    description: Security group allows PostgreSQL access from any IP address
+
+  - id: sg-redis-open-internet
+    name: Redis Port Open to Internet
+    resource: security_group
+    condition: 'ports contains [6379] and source = 0.0.0.0/0'
+    severity: critical
+    description: Security group allows Redis access from any IP address
+
+  - id: sg-mongodb-open-internet
+    name: MongoDB Port Open to Internet
+    resource: security_group
+    condition: 'ports contains [27017] and source = 0.0.0.0/0'
+    severity: critical
+    description: Security group allows MongoDB access from any IP address
+
+  - id: sg-elasticsearch-open-internet
+    name: Elasticsearch Port Open to Internet
+    resource: security_group
+    condition: 'ports contains [9200] and source = 0.0.0.0/0'
+    severity: critical
+    description: Security group allows Elasticsearch access from any IP address
+
+  - id: s3-public-read
+    name: S3 Bucket Public Read
+    resource: s3_bucket
+    condition: 'permission = public-read'
+    severity: high
+    description: S3 bucket allows public read access
+
+  - id: s3-public-write
+    name: S3 Bucket Public Write
+    resource: s3_bucket
+    condition: 'permission = public-read-write'
+    severity: critical
+    description: S3 bucket allows public read and write access

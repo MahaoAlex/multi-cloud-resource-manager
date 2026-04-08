@@ -1,0 +1,147 @@
+name: aliyun-resource-manager
+description: Unified Alibaba Cloud resource management tool for VPC inventory, security scanning, OSS scanning, ECS monitoring, EIP scanning, and compliance checking across multiple regions.
+version: 1.0.0
+
+tools:
+  - name: scan_vpcs
+    description: Enumerate and analyze all VPC resources across configured regions
+    input_schema:
+      type: object
+      properties:
+        regions:
+          type: array
+          items:
+            type: string
+          description: List of regions to scan (defaults to ALIYUN_REGIONS env var)
+        output_dir:
+          type: string
+          description: Directory to save reports (default: ./reports)
+        scan_type:
+          type: string
+          enum: [manual, scheduled]
+          description: Type of scan - manual generates both JSON and Markdown, scheduled generates JSON only
+    handler: main.scan_vpcs
+
+  - name: scan_security
+    description: Scan security groups for high-risk configurations
+    input_schema:
+      type: object
+      properties:
+        regions:
+          type: array
+          items:
+            type: string
+          description: List of regions to scan
+        check_ports:
+          type: array
+          items:
+            type: integer
+          description: List of ports to check (default: [22, 33, 44])
+    handler: main.scan_security
+
+  - name: scan_oss
+    description: Detect publicly accessible OSS buckets and objects
+    input_schema:
+      type: object
+      properties:
+        regions:
+          type: array
+          items:
+            type: string
+          description: List of regions to scan
+    handler: main.scan_oss
+
+  - name: scan_ecs
+    description: Monitor ECS instances for low utilization and naming compliance
+    input_schema:
+      type: object
+      properties:
+        regions:
+          type: array
+          items:
+            type: string
+          description: List of regions to scan
+        cpu_threshold:
+          type: number
+          description: CPU utilization threshold percentage (default: 10)
+        check_naming:
+          type: boolean
+          description: Whether to check naming conventions (default: true)
+    handler: main.scan_ecs
+
+  - name: scan_eips
+    description: Detect unattached Elastic IPs
+    input_schema:
+      type: object
+      properties:
+        regions:
+          type: array
+          items:
+            type: string
+          description: List of regions to scan
+    handler: main.scan_eips
+
+  - name: full_scan
+    description: Perform complete resource scan across all categories
+    input_schema:
+      type: object
+      properties:
+        regions:
+          type: array
+          items:
+            type: string
+          description: List of regions to scan (default: all configured regions)
+        output_dir:
+          type: string
+          description: Directory to save reports (default: ./reports)
+        scan_type:
+          type: string
+          enum: [manual, scheduled]
+          description: Type of scan
+        retention_days:
+          type: integer
+          description: Number of days to keep reports (default: 7)
+    handler: main.full_scan
+
+  - name: generate_report
+    description: Generate formatted reports from scan results
+    input_schema:
+      type: object
+      properties:
+        scan_results:
+          type: object
+          description: Raw scan results data
+        format:
+          type: string
+          enum: [json, markdown, both]
+          description: Output format
+        output_path:
+          type: string
+          description: Output file path
+    handler: main.generate_report
+
+  - name: list_rules
+    description: List all loaded rules and their configurations
+    input_schema:
+      type: object
+      properties: {}
+    handler: main.list_rules
+
+  - name: run_custom_rule
+    description: Run a custom rule against resources
+    input_schema:
+      type: object
+      properties:
+        rule_file:
+          type: string
+          description: Path to custom rule YAML file
+        resource_type:
+          type: string
+          description: Type of resources to check
+    handler: main.run_custom_rule
+
+dependencies:
+  - name: proxy-injection
+    path: ../huaweicloud-core/proxy-injection
+  - name: auth-manager
+    path: ../huaweicloud-core/auth-manager

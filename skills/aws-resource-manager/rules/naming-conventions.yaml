@@ -1,0 +1,38 @@
+# Naming Convention Rules for AWS Resource Manager
+# Define rules for resource naming compliance
+
+rules:
+  - id: ec2-naming-convention
+    name: EC2 Instance Naming Convention
+    resource: ec2
+    condition: 'name !~ /\\d{6,}/'
+    severity: warning
+    description: EC2 instance name should contain at least 6 consecutive digits (employee ID)
+
+  - id: vpc-naming-convention
+    name: VPC Naming Convention
+    resource: vpc
+    condition: 'name !~ /^(prod|dev|test|staging)-/'
+    severity: info
+    description: VPC name should start with environment prefix (prod, dev, test, staging)
+
+  - id: security-group-description
+    name: Security Group Missing Description
+    resource: security_group
+    condition: 'description = ""'
+    severity: info
+    description: Security group should have a description
+
+  - id: s3-bucket-tagging
+    name: S3 Bucket Missing Tags
+    resource: s3_bucket
+    condition: 'tags = {}'
+    severity: info
+    description: S3 bucket should have tags for cost allocation and management
+
+  - id: ec2-tag-owner
+    name: EC2 Instance Missing Owner Tag
+    resource: ec2
+    condition: 'tags !~ /Owner/'
+    severity: warning
+    description: EC2 instance should have an Owner tag
