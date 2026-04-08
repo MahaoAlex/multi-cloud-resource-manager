@@ -35,13 +35,15 @@ hcloud --help
 
 ## 二、Skills 部署
 
-### 2.1 复制 Skills 到 Claude Code 目录
+### 2.1 下载并部署 Skills
 
 ```bash
-# 进入项目目录
-cd /home/alex/codebase/multi-cloud-resource-manager
+# 创建临时目录下载项目
+cd /tmp
+git clone https://github.com/MahaoAlex/multi-cloud-resource-manager.git
+cd multi-cloud-resource-manager
 
-# 复制核心 Skills
+# 复制核心 Skills 到 Claude Code 目录
 cp -r skills/huaweicloud-core/proxy-injection ~/.claude/skills/
 cp -r skills/huaweicloud-core/auth-manager ~/.claude/skills/
 
@@ -50,6 +52,10 @@ cp -r skills/huaweicloud-resource-manager ~/.claude/skills/
 
 # 验证安装
 ls -la ~/.claude/skills/
+
+# 清理临时文件(可选)
+cd /tmp
+rm -rf multi-cloud-resource-manager
 ```
 
 ### 2.2 目录结构验证
@@ -88,8 +94,11 @@ ls -la ~/.claude/skills/
 部署 Skills 后需要重启 Claude Code 以加载新的 Skills：
 
 ```bash
-# 在 Claude Code 中执行
-/restart
+# 退出 Claude Code
+exit
+
+# 重新启动 Claude Code
+claude
 ```
 
 ### 3.2 测试 proxy-injection Skill
