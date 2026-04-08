@@ -1,34 +1,44 @@
-# Multi-Cloud Resource Manager
+# Huawei Cloud Resource Manager
 
-A unified multi-cloud resource management solution built on the Claude Agent Skills specification. Seamlessly manage resources across AWS, Azure, Alibaba Cloud, Tencent Cloud, Huawei Cloud, and more — all within Claude Code or OpenClaw.
+A Claude Code Skill for Huawei Cloud resource management. Automate resource inventory, security scanning, and compliance checking across multiple regions.
 
 ## Overview
 
-Multi-Cloud Resource Manager provides centralized control over your cloud infrastructure through intelligent Agent Skills. It automates resource inventory, quota monitoring, and security scanning across multiple cloud providers.
+Huawei Cloud Resource Manager provides comprehensive resource scanning capabilities through Claude Code Skills. It supports multi-region scanning with configurable rules and generates actionable reports for resource optimization.
 
-## Core Capabilities
+## Implemented Capabilities
 
-| Capability | Description |
-|------------|-------------|
-| **Resource Inventory** | Automated discovery and archival of cloud resource lists across all supported providers |
-| **Quota Monitoring** | Real-time tracking of resource quotas and usage limits with proactive alerts |
-| **Security Scanning** | Detection of high-risk resources: open ports, public access exposure, expired credentials, etc. |
-| **Multi-Provider Support** | Unified interface for AWS, Azure, Alibaba Cloud, Tencent Cloud, and Huawei Cloud |
+| Capability | Description | Status |
+|------------|-------------|--------|
+| **VPC Inventory** | Enumerate VPCs and analyze usage across regions | Implemented |
+| **Security Scanning** | Detect high-risk security group configurations | Implemented |
+| **OBS Scanning** | Identify publicly accessible buckets and objects | Implemented |
+| **ECS Monitoring** | Find low-utilization instances and naming violations | Implemented |
+| **EIP Scanning** | Detect unattached Elastic IPs | Implemented |
+| **Rule Engine** | YAML-based customizable compliance rules | Implemented |
+| **Multi-Region** | Support scanning all Huawei Cloud regions | Implemented |
 
-## Supported Cloud Providers
+## Supported Regions
 
-- **AWS** - Amazon Web Services
-- **Azure** - Microsoft Azure
-- **Alibaba Cloud** - 阿里云
-- **Tencent Cloud** - 腾讯云
-- **Huawei Cloud** - 华为云
+- cn-north-4 (Beijing)
+- cn-north-1 (Beijing)
+- cn-south-1 (Guangzhou)
+- cn-east-2 (Shanghai)
+- cn-east-3 (Shanghai)
+- cn-southwest-2 (Guiyang)
+- ap-southeast-1 (Hong Kong)
+- ap-southeast-2 (Bangkok)
+- ap-southeast-3 (Singapore)
+- eu-west-101 (Amsterdam)
+- af-south-1 (Johannesburg)
 
 ## Quick Start
 
 ### Prerequisites
 
-- Claude Code or OpenClaw installed
-- Cloud provider credentials configured (following least-privilege principles)
+- Claude Code installed
+- Huawei Cloud CLI (hcloud) installed
+- Huawei Cloud Access Key and Secret Key
 
 ### Installation
 
@@ -41,122 +51,162 @@ Multi-Cloud Resource Manager provides centralized control over your cloud infras
 2. Install the Agent Skills
    ```bash
    # For Claude Code
-   cp -r skills/* ~/.claude/skills/
-
-   # For OpenClaw
-   cp -r skills/* ~/.openclaw/skills/
+   cp -r skills/huaweicloud-core/* ~/.claude/skills/
+   cp -r skills/huaweicloud-resource-manager ~/.claude/skills/
    ```
 
-3. Configure cloud provider credentials via environment variables or your preferred secret manager
-
-4. Start managing your multi-cloud resources
+3. Configure Huawei Cloud credentials
+   ```bash
+   export HWCLOUD_ACCESS_KEY="your-access-key"
+   export HWCLOUD_SECRET_KEY="your-secret-key"
+   export HWCLOUD_REGIONS="cn-north-4,cn-south-1"
    ```
-   /cloud-inventory      # Generate resource inventory
-   /quota-check          # Check quota usage across providers
-   /security-scan        # Scan for high-risk resources
+
+4. Start using the Skills
+   ```
+   # Interactive mode
+   Please scan my Huawei Cloud resources
+
+   # Command mode
+   /huaweicloud-scan --regions=cn-north-4,cn-south-1
    ```
 
 ## Available Skills
 
 | Skill | Command | Description |
 |-------|---------|-------------|
-| Cloud Inventory | `/cloud-inventory` | Discover and archive all cloud resources |
-| Quota Monitor | `/quota-check` | Check resource quotas and limits |
-| Security Scanner | `/security-scan` | Identify high-risk configurations |
-| Cost Analyzer | `/cost-analyze` | Analyze resource costs and optimization opportunities |
+| Proxy Injection | `/proxy-injection` | Configure HTTP/HTTPS proxy for hcloud CLI |
+| Auth Manager | `/auth-manager` | Configure multi-region authentication |
+| Resource Scanner | `/huaweicloud-scan` | Full resource scan across all categories |
+| VPC Inventory | Scan VPCs | Enumerate and analyze VPC usage |
+| Security Scanner | Scan security groups | Detect high-risk port configurations |
+| OBS Scanner | Scan OBS buckets | Identify public access configurations |
+| ECS Monitor | Monitor ECS | Check CPU utilization and naming compliance |
+| EIP Scanner | Scan EIPs | Find unattached Elastic IPs |
 
-## Security Best Practices
+## Security Scanning
 
-> **Warning: Security First Approach**
+The security scanner identifies the following risk patterns:
 
-- **Never store plaintext credentials** - Use environment variables or secret managers
-- **Encrypt API keys** - Store keys using cloud KMS or HashiCorp Vault
-- **Least privilege access** - All skills operate with minimal required permissions
-- **Audit logging** - All resource operations are logged for audit purposes
-- **No data retention** - Resource data is processed locally, not sent to external servers
+| Risk Type | Severity | Description |
+|-----------|----------|-------------|
+| Open SSH Port | Critical | Port 22 open to 0.0.0.0/0 |
+| Open Port 33 | Critical | Port 33 open to internet |
+| Open Port 44 | Critical | Port 44 open to internet |
+| Public OBS Bucket | High | Bucket with public-read or public-read-write |
+| Public OBS Object | High | Object with public access |
 
-### Recommended Credential Setup
+## Naming Convention
 
-```bash
-# AWS
-export AWS_ACCESS_KEY_ID="your-access-key"
-export AWS_SECRET_ACCESS_KEY="your-secret-key"
+ECS instances must contain at least 6 consecutive digits (employee ID format):
 
-# Azure
-export AZURE_SUBSCRIPTION_ID="your-subscription-id"
-export AZURE_CLIENT_ID="your-client-id"
-export AZURE_CLIENT_SECRET="your-client-secret"
-
-# Alibaba Cloud
-export ALICLOUD_ACCESS_KEY="your-access-key"
-export ALICLOUD_SECRET_KEY="your-secret-key"
-
-# Tencent Cloud
-export TENCENTCLOUD_SECRET_ID="your-secret-id"
-export TENCENTCLOUD_SECRET_KEY="your-secret-key"
-
-# Huawei Cloud
-export HWCLOUD_ACCESS_KEY="your-access-key"
-export HWCLOUD_SECRET_KEY="your-secret-key"
-```
+- Valid: `user-00123456-web`, `test123456vm`, `00123456`
+- Invalid: `web-server`, `test12345`
 
 ## Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────┐
 │                  Agent Interface                        │
-│              (Claude Code / OpenClaw)                   │
+│                   (Claude Code)                         │
 └─────────────────────────────────────────────────────────┘
                            │
 ┌─────────────────────────────────────────────────────────┐
-│              Multi-Cloud Resource Manager               │
+│           Huawei Cloud Resource Manager                 │
 │  ┌──────────────┬──────────────┬─────────────────────┐  │
-│  │   Inventory  │   Quota      │   Security Scan     │  │
-│  │   Manager    │   Monitor    │   Engine            │  │
+│  │   VPC        │   Security   │   OBS Scanner       │  │
+│  │   Inventory  │   Scanner    │                     │  │
+│  ├──────────────┼──────────────┼─────────────────────┤  │
+│  │   ECS        │   EIP        │   Rule Engine       │  │
+│  │   Monitor    │   Scanner    │                     │  │
 │  └──────────────┴──────────────┴─────────────────────┘  │
 └─────────────────────────────────────────────────────────┘
                            │
-        ┌──────────────────┼──────────────────┐
-        │                  │                  │
-   ┌────▼────┐       ┌────▼────┐       ┌────▼────┐
-   │  AWS    │       │  Azure  │       │ Alibaba │
-   └─────────┘       └─────────┘       └─────────┘
-   ┌─────────┐       ┌─────────┐
-   │ Tencent │       │ Huawei  │
-   └─────────┘       └─────────┘
+              ┌────────────┼────────────┐
+              │            │            │
+         ┌────▼────┐  ┌────▼────┐  ┌────▼────┐
+         │cn-north-│  │cn-south-│  │cn-east-2│
+         │   4     │  │   1     │  │         │
+         └─────────┘  └─────────┘  └─────────┘
+```
+
+## Report Output
+
+### Directory Structure
+
+```
+reports/
+└── 2026-04-08/
+    ├── scheduled_09-00-00.json     # Scheduled scan (JSON only)
+    ├── manual_14-30-00.json        # Manual scan
+    └── manual_14-30-00.md          # Manual scan (human-readable)
+```
+
+### Report Formats
+
+- **Manual scans**: Generate both JSON and Markdown reports
+- **Scheduled scans**: Generate JSON reports only
+- **Retention**: Automatically clean reports older than 7 days
+
+## Configuration
+
+### Environment Variables
+
+| Variable | Description | Required |
+|----------|-------------|----------|
+| HWCLOUD_ACCESS_KEY | Huawei Cloud Access Key | Yes |
+| HWCLOUD_SECRET_KEY | Huawei Cloud Secret Key | Yes |
+| HWCLOUD_REGIONS | Comma-separated regions or 'all' | Yes |
+| HTTP_PROXY | HTTP proxy URL | Optional |
+| HTTPS_PROXY | HTTPS proxy URL | Optional |
+| NO_PROXY | Comma-separated no-proxy hosts | Optional |
+
+### Custom Rules
+
+Create custom rules in `./rules/` directory:
+
+```yaml
+# rules/custom-rules.yaml
+rules:
+  - id: "my-rule"
+    name: "My Custom Check"
+    resource: "ecs"
+    condition: "name !~ /-prod$/"
+    severity: "warning"
+    description: "Production ECS must have -prod suffix"
 ```
 
 ## Documentation
 
-- [Getting Started Guide](./docs/GETTING_STARTED.md)
-- [Cloud Provider Setup](./docs/PROVIDER_SETUP.md)
-- [Security Scan Rules](./docs/SECURITY_RULES.md)
-- [API Reference](./docs/API_REFERENCE.md)
-- [Contributing Guide](./CONTRIBUTING.md)
+- [Deployment Guide](./DEPLOY_GUIDE.md) - Complete Chinese deployment and testing guide
+- [Design Specification](./docs/superpowers/specs/2026-04-08-huaweicloud-resource-manager-design.md) - Technical design document
 
-## High-Risk Resources Detection
+## Security Best Practices
 
-The security scanner identifies the following risk patterns:
+> **Warning: Security First Approach**
 
-| Risk Type | Severity | Description |
-|-----------|----------|-------------|
-| Open Security Groups | Critical | Security groups allowing 0.0.0.0/0 on sensitive ports |
-| Public S3 Buckets | Critical | S3 buckets with public read/write access |
-| Exposed Databases | High | Databases accessible from the internet |
-| Expired Credentials | High | IAM keys not rotated within 90 days |
-| Overprivileged Roles | Medium | Roles with wildcard (*) permissions |
-| Unencrypted Storage | Medium | Volumes or buckets without encryption |
+- Never store plaintext credentials - Use environment variables
+- All skills operate with read-only permissions
+- Delete operations require explicit human confirmation
+- Resource data is processed locally
+- Reports contain metadata only, not sensitive data
+
+## Scheduling
+
+Configure hourly scans using cron:
+
+```bash
+0 * * * * cd /path/to/project && claude "/huaweicloud-scan --mode=scheduled --regions=all"
+```
 
 ## Contributing
 
-We welcome contributions! Please see [CONTRIBUTING.md](./CONTRIBUTING.md) for details.
+We welcome contributions! Areas for contribution:
 
-### Areas for Contribution
-
-- Additional cloud provider support
-- New security scanning rules
-- Cost optimization recommendations
-- Multi-region deployment guides
+- Additional scanning rules
+- New resource types
+- Report format improvements
+- Performance optimizations
 
 ## License
 
@@ -169,6 +219,6 @@ This project is licensed under the [MIT License](./LICENSE).
 
 ---
 
-**Secure Your Multi-Cloud Infrastructure with Confidence**
+**Secure Your Huawei Cloud Infrastructure with Confidence**
 
 Built with the [Claude Agent Skills Specification](https://docs.anthropic.com/)
