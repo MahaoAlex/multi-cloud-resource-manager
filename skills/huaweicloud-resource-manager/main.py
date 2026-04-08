@@ -14,6 +14,7 @@ import logging
 from datetime import datetime
 from typing import List, Dict, Any, Optional
 from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # Add tools directory to path
 tools_dir = Path(__file__).parent / "tools"
@@ -225,20 +226,98 @@ def scan_eips(regions: Optional[List[str]] = None) -> List[Dict[str, Any]]:
     return eips
 
 
+def _scan_single_region(region: str) -> Dict[str, Any]:
+    """
+    Scan a single region with all resource types.
+    This function is designed to be run concurrently.
+
+    Args:
+        region: Region ID to scan
+
+    Returns:
+        Dictionary containing scan results for the region
+    """
+    logger.info(f"Scanning region: {region}")
+    region_result = {
+        "region": region,
+        "vpc_analysis": [],
+        "security_issues": [],
+        "obs_issues": [],
+        "ecs_issues": [],
+        "naming_violations": [],
+        "unattached_eips": [],
+        "summary": {},
+        "error": None
+    }
+
+    try:
+        # VPC inventory and analysis
+        vpc_data = get_vpc_inventory([region])
+        for vpc in vpc_data.get("vpcs", []):
+            analysis = analyze_vpc_usage(vpc.get("id"), region)
+            region_result["vpc_analysis"].append(analysis)
+
+        # Security scan
+        sec_issues = scan_security_groups([region])
+        region_result["security_issues"].extend(sec_issues)
+
+        # OBS scan
+        obs_issues = scan_obs_buckets([region])
+        region_result["obs_issues"].extend(obs_issues)
+
+        # ECS scan
+        ecs_issues = monitor_ecs_instances([region])
+        region_result["ecs_issues"].extend(ecs_issues)
+
+        # Naming violations from ECS issues
+        for ecs in ecs_issues:
+            for issue in ecs.get("issues", []):
+                if issue.get("type") == "naming_violation":
+                    region_result["naming_violations"].append({
+                        "resource_type": "ecs",
+                        "resource_id": ecs.get("instance_id"),
+                        "resource_name": ecs.get("instance_name"),
+                        "region": region
+                    })
+
+        # EIP scan
+        eips = scan_unattached_eips([region])
+        region_result["unattached_eips"].extend(eips)
+
+        # Update region summary
+        region_result["summary"] = {
+            "vpcs": len(vpc_data.get("vpcs", [])),
+            "security_issues": len(sec_issues),
+            "obs_issues": len(obs_issues),
+            "ecs_issues": len(ecs_issues),
+            "unattached_eips": len(eips)
+        }
+
+        logger.info(f"Completed scanning region: {region}")
+
+    except Exception as e:
+        logger.error(f"Error scanning region {region}: {e}")
+        region_result["error"] = str(e)
+
+    return region_result
+
+
 def full_scan(
     regions: Optional[List[str]] = None,
     output_dir: str = "./reports",
     scan_type: str = "manual",
-    retention_days: int = 7
+    retention_days: int = 7,
+    max_workers: int = 5
 ) -> Dict[str, Any]:
     """
-    Perform complete resource scan across all categories.
+    Perform complete resource scan across all categories with concurrent region scanning.
 
     Args:
         regions: List of regions to scan
         output_dir: Directory for reports
         scan_type: 'manual' or 'scheduled'
         retention_days: Days to keep reports
+        max_workers: Maximum concurrent workers (default: 5)
 
     Returns:
         Complete scan results
@@ -246,7 +325,7 @@ def full_scan(
     if regions is None:
         regions = get_regions_from_env()
 
-    logger.info(f"Starting full scan for {len(regions)} region(s)")
+    logger.info(f"Starting concurrent full scan for {len(regions)} region(s) with max {max_workers} workers")
     start_time = time.time()
 
     # Collect all scan results
@@ -264,56 +343,44 @@ def full_scan(
         "failed_regions": []
     }
 
-    # Scan each region
-    for i, region in enumerate(regions, 1):
-        logger.info(f"[{i}/{len(regions)}] Scanning region: {region}")
+    # Use ThreadPoolExecutor for concurrent scanning
+    # Limit max_workers to 5 as specified for safe API usage
+    with ThreadPoolExecutor(max_workers=min(max_workers, 5)) as executor:
+        # Submit all region scan tasks
+        future_to_region = {
+            executor.submit(_scan_single_region, region): region
+            for region in regions
+        }
 
-        try:
-            # VPC inventory and analysis
-            vpc_data = get_vpc_inventory([region])
-            for vpc in vpc_data.get("vpcs", []):
-                analysis = analyze_vpc_usage(vpc.get("id"), region)
-                all_results["vpc_analysis"].append(analysis)
+        # Process completed results as they finish
+        completed = 0
+        for future in as_completed(future_to_region):
+            region = future_to_region[future]
+            completed += 1
 
-            # Security scan
-            sec_issues = scan_security_groups([region])
-            all_results["security_issues"].extend(sec_issues)
+            try:
+                region_result = future.result()
 
-            # OBS scan
-            obs_issues = scan_obs_buckets([region])
-            all_results["obs_issues"].extend(obs_issues)
+                if region_result["error"]:
+                    all_results["failed_regions"].append({
+                        "region": region,
+                        "error": region_result["error"]
+                    })
+                else:
+                    # Merge region results into all_results
+                    all_results["vpc_analysis"].extend(region_result["vpc_analysis"])
+                    all_results["security_issues"].extend(region_result["security_issues"])
+                    all_results["obs_issues"].extend(region_result["obs_issues"])
+                    all_results["ecs_issues"].extend(region_result["ecs_issues"])
+                    all_results["naming_violations"].extend(region_result["naming_violations"])
+                    all_results["unattached_eips"].extend(region_result["unattached_eips"])
+                    all_results["summary_by_region"][region] = region_result["summary"]
 
-            # ECS scan
-            ecs_issues = monitor_ecs_instances([region])
-            all_results["ecs_issues"].extend(ecs_issues)
+                logger.info(f"[{completed}/{len(regions)}] Processed region: {region}")
 
-            # Naming violations from ECS issues
-            for ecs in ecs_issues:
-                for issue in ecs.get("issues", []):
-                    if issue.get("type") == "naming_violation":
-                        all_results["naming_violations"].append({
-                            "resource_type": "ecs",
-                            "resource_id": ecs.get("instance_id"),
-                            "resource_name": ecs.get("instance_name"),
-                            "region": region
-                        })
-
-            # EIP scan
-            eips = scan_unattached_eips([region])
-            all_results["unattached_eips"].extend(eips)
-
-            # Update region summary
-            all_results["summary_by_region"][region] = {
-                "vpcs": len(vpc_data.get("vpcs", [])),
-                "security_issues": len(sec_issues),
-                "obs_issues": len(obs_issues),
-                "ecs_issues": len(ecs_issues),
-                "unattached_eips": len(eips)
-            }
-
-        except Exception as e:
-            logger.error(f"Error scanning region {region}: {e}")
-            all_results["failed_regions"].append({"region": region, "error": str(e)})
+            except Exception as e:
+                logger.error(f"Error processing region {region}: {e}")
+                all_results["failed_regions"].append({"region": region, "error": str(e)})
 
     # Calculate totals
     all_results["summary"] = {

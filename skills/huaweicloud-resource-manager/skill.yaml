@@ -86,7 +86,9 @@ tools:
     handler: main.scan_eips
 
   - name: full_scan
-    description: Perform complete resource scan across all categories
+    description: |
+      Perform complete resource scan across all categories with concurrent region scanning.
+      Supports up to 5 concurrent workers for faster multi-region scanning.
     input_schema:
       type: object
       properties:
@@ -105,6 +107,11 @@ tools:
         retention_days:
           type: integer
           description: Number of days to keep reports (default: 7)
+        max_workers:
+          type: integer
+          minimum: 1
+          maximum: 5
+          description: Maximum concurrent workers for parallel scanning (default: 5, max: 5)
     handler: main.full_scan
 
   - name: generate_report
