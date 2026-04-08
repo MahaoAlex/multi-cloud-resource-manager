@@ -24,7 +24,7 @@ tar -xzf huaweicloud-cli-linux-amd64.tar.gz
 sudo mv hcloud /usr/local/bin/
 
 # 验证安装
-hcloud --version
+hcloud --help
 ```
 
 ### 1.3 获取华为云凭证
