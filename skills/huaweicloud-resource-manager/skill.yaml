@@ -87,8 +87,9 @@ tools:
 
   - name: full_scan
     description: |
-      Perform complete resource scan across all categories with concurrent region scanning.
-      Supports up to 5 concurrent workers for faster multi-region scanning.
+      Perform complete resource scan across all categories with dual-level concurrent scanning.
+      Supports concurrent region scanning (max 5) AND concurrent VPC analysis within each region (max 3).
+      This double concurrency significantly speeds up scans in environments with many VPCs.
     input_schema:
       type: object
       properties:
@@ -111,7 +112,12 @@ tools:
           type: integer
           minimum: 1
           maximum: 5
-          description: Maximum concurrent workers for parallel scanning (default: 5, max: 5)
+          description: Maximum concurrent region workers for parallel scanning (default: 5)
+        vpc_max_workers:
+          type: integer
+          minimum: 1
+          maximum: 5
+          description: Maximum concurrent VPC workers per region (default: 3)
     handler: main.full_scan
 
   - name: generate_report

@@ -14,7 +14,11 @@ import json
 import subprocess
 import logging
 import os
+import random
+import time
 from typing import List, Dict, Any, Optional
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from threading import Lock
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -22,6 +26,9 @@ logger = logging.getLogger(__name__)
 
 # Default page size for pagination
 DEFAULT_PAGE_SIZE = 100
+
+# Lock for thread-safe operations
+_vpc_analysis_lock = Lock()
 
 
 def run_hcloud_command(command: List[str], region: str) -> Optional[Dict[str, Any]]:
@@ -359,9 +366,118 @@ def analyze_vpc_usage(vpc_id: str, region: str) -> Dict[str, Any]:
     }
 
 
+def analyze_vpcs_concurrent(
+    vpc_ids: Optional[List[str]] = None,
+    region: str = "cn-north-4",
+    max_workers: int = 3
+) -> Dict[str, Any]:
+    """
+    Analyze VPCs concurrently within a region.
+
+    Args:
+        vpc_ids: Optional list of specific VPC IDs to analyze
+        region: Region to scan
+        max_workers: Maximum concurrent VPC analysis workers (default: 3)
+
+    Returns:
+        Dictionary containing VPC analysis results
+    """
+    if not vpc_ids:
+        # Get all VPCs in region
+        from vpc_inventory import get_vpcs_in_region
+        vpcs = get_vpcs_in_region(region)
+        vpc_ids = [vpc.get("id") or vpc.get("vpc_id") for vpc in vpcs if vpc.get("id") or vpc.get("vpc_id")]
+
+    if not vpc_ids:
+        logger.info(f"No VPCs to analyze in {region}")
+        return {
+            "vpc_analysis": [],
+            "summary": {"total_vpcs": 0, "in_use": 0, "unused": 0, "pending": 0},
+            "failed_vpcs": []
+        }
+
+    logger.info(f"Analyzing {len(vpc_ids)} VPC(s) in {region} with {max_workers} workers")
+
+    all_analysis = []
+    failed_vpcs = []
+    completed = 0
+
+    # Use ThreadPoolExecutor for concurrent VPC analysis
+    with ThreadPoolExecutor(max_workers=min(max_workers, 5)) as executor:
+        # Submit all VPC analysis tasks with staggered delays
+        future_to_vpc = {}
+        for index, vpc_id in enumerate(vpc_ids):
+            if not vpc_id:
+                continue
+            # Add small staggered delay to avoid API rate limiting
+            delay = random.uniform(0.1, 0.5) * (index % max_workers)
+            future = executor.submit(_analyze_vpc_with_delay, vpc_id, region, delay)
+            future_to_vpc[future] = vpc_id
+
+        # Process completed results as they finish
+        for future in as_completed(future_to_vpc):
+            vpc_id = future_to_vpc[future]
+            completed += 1
+
+            try:
+                analysis = future.result()
+                if analysis:
+                    with _vpc_analysis_lock:
+                        all_analysis.append(analysis)
+
+                    status_icon = "✓" if analysis["status"] == "in_use" else "⚠"
+                    logger.info(f"  [{completed}/{len(vpc_ids)}] {status_icon} VPC {vpc_id}: {analysis['status']}")
+                else:
+                    failed_vpcs.append({"vpc_id": vpc_id, "region": region, "error": "Analysis returned None"})
+
+            except Exception as e:
+                logger.error(f"Error analyzing VPC {vpc_id}: {e}")
+                failed_vpcs.append({"vpc_id": vpc_id, "region": region, "error": str(e)})
+
+    # Calculate summary statistics
+    status_counts = {"in_use": 0, "unused": 0, "pending": 0}
+    for analysis in all_analysis:
+        status = analysis.get("status", "pending")
+        status_counts[status] = status_counts.get(status, 0) + 1
+
+    result = {
+        "vpc_analysis": all_analysis,
+        "summary": {
+            "total_vpcs": len(all_analysis),
+            "in_use": status_counts["in_use"],
+            "unused": status_counts["unused"],
+            "pending": status_counts["pending"]
+        },
+        "failed_vpcs": failed_vpcs
+    }
+
+    logger.info(f"VPC analysis complete for {region}. Total: {len(all_analysis)}, "
+                f"In use: {status_counts['in_use']}, "
+                f"Unused: {status_counts['unused']}")
+
+    return result
+
+
+def _analyze_vpc_with_delay(vpc_id: str, region: str, delay: float) -> Optional[Dict[str, Any]]:
+    """
+    Analyze a single VPC with initial delay for staggered execution.
+
+    Args:
+        vpc_id: VPC ID to analyze
+        region: Region name
+        delay: Initial delay in seconds
+
+    Returns:
+        VPC analysis result or None
+    """
+    time.sleep(delay)
+    return analyze_vpc_usage(vpc_id, region)
+
+
 def analyze_vpcs(vpc_ids: Optional[List[str]] = None, regions: Optional[List[str]] = None) -> Dict[str, Any]:
     """
-    Analyze VPCs across multiple regions.
+    Analyze VPCs across multiple regions (serial execution, legacy method).
+    For concurrent analysis, use analyze_vpcs_concurrent().
 
     Args:
         vpc_ids: Optional list of specific VPC IDs to analyze

@@ -24,7 +24,7 @@ sys.path.insert(0, str(tools_dir))
 
 # Import tools
 from vpc_inventory import get_vpc_inventory
-from vpc_analyzer import analyze_vpc_usage
+from vpc_analyzer import analyze_vpc_usage, analyze_vpcs_concurrent
 from security_scanner import scan_security_groups
 from obs_scanner import scan_obs_buckets
 from ecs_monitor import monitor_ecs_instances
@@ -233,13 +233,15 @@ _scan_lock = Lock()
 _scan_counter = 0
 
 
-def _scan_single_region(region: str) -> Dict[str, Any]:
+def _scan_single_region(region: str, vpc_max_workers: int = 3) -> Dict[str, Any]:
     """
     Scan a single region with all resource types.
-    This function is designed to be run concurrently.
+    This function is designed to be run concurrently across regions,
+    and also performs concurrent VPC analysis within the region.
 
     Args:
         region: Region ID to scan
+        vpc_max_workers: Maximum concurrent workers for VPC analysis (default: 3)
 
     Returns:
         Dictionary containing scan results for the region
@@ -253,7 +255,7 @@ def _scan_single_region(region: str) -> Dict[str, Any]:
         delay = random.uniform(0.5, 1.5)
     time.sleep(delay)
 
-    logger.info(f"Scanning region: {region} (after {delay:.2f}s delay)")
+    logger.info(f"Scanning region: {region} (after {delay:.2f}s delay, VPC workers: {vpc_max_workers})")
     region_result = {
         "region": region,
         "vpc_analysis": [],
@@ -267,11 +269,20 @@ def _scan_single_region(region: str) -> Dict[str, Any]:
     }
 
     try:
-        # VPC inventory and analysis
+        # VPC inventory
         vpc_data = get_vpc_inventory([region])
-        for vpc in vpc_data.get("vpcs", []):
-            analysis = analyze_vpc_usage(vpc.get("id"), region)
-            region_result["vpc_analysis"].append(analysis)
+        vpc_ids = [vpc.get("id") for vpc in vpc_data.get("vpcs", []) if vpc.get("id")]
+
+        if vpc_ids:
+            # Analyze VPCs concurrently
+            vpc_results = analyze_vpcs_concurrent(
+                vpc_ids=vpc_ids,
+                region=region,
+                max_workers=vpc_max_workers
+            )
+            region_result["vpc_analysis"] = vpc_results.get("vpc_analysis", [])
+        else:
+            logger.info(f"No VPCs found in region {region}")
 
         # Security scan
         sec_issues = scan_security_groups([region])
@@ -302,14 +313,15 @@ def _scan_single_region(region: str) -> Dict[str, Any]:
 
         # Update region summary
         region_result["summary"] = {
-            "vpcs": len(vpc_data.get("vpcs", [])),
+            "vpcs": len(region_result["vpc_analysis"]),
             "security_issues": len(sec_issues),
             "obs_issues": len(obs_issues),
             "ecs_issues": len(ecs_issues),
             "unattached_eips": len(eips)
         }
 
-        logger.info(f"Completed scanning region: {region}")
+        logger.info(f"Completed scanning region: {region} "
+                    f"({len(region_result['vpc_analysis'])} VPCs analyzed)")
 
     except Exception as e:
         logger.error(f"Error scanning region {region}: {e}")
@@ -323,17 +335,19 @@ def full_scan(
     output_dir: str = "./reports",
     scan_type: str = "manual",
     retention_days: int = 7,
-    max_workers: int = 5
+    max_workers: int = 5,
+    vpc_max_workers: int = 3
 ) -> Dict[str, Any]:
     """
-    Perform complete resource scan across all categories with concurrent region scanning.
+    Perform complete resource scan across all categories with concurrent region and VPC scanning.
 
     Args:
         regions: List of regions to scan
         output_dir: Directory for reports
         scan_type: 'manual' or 'scheduled'
         retention_days: Days to keep reports
-        max_workers: Maximum concurrent workers (default: 5)
+        max_workers: Maximum concurrent region workers (default: 5)
+        vpc_max_workers: Maximum concurrent VPC workers per region (default: 3)
 
     Returns:
         Complete scan results
@@ -341,7 +355,8 @@ def full_scan(
     if regions is None:
         regions = get_regions_from_env()
 
-    logger.info(f"Starting concurrent full scan for {len(regions)} region(s) with max {max_workers} workers")
+    logger.info(f"Starting concurrent full scan for {len(regions)} region(s) "
+                f"with max {max_workers} region workers, {vpc_max_workers} VPC workers per region")
     start_time = time.time()
 
     # Collect all scan results
@@ -356,15 +371,19 @@ def full_scan(
         "ecs_issues": [],
         "unattached_eips": [],
         "naming_violations": [],
-        "failed_regions": []
+        "failed_regions": [],
+        "scan_config": {
+            "max_workers": max_workers,
+            "vpc_max_workers": vpc_max_workers
+        }
     }
 
-    # Use ThreadPoolExecutor for concurrent scanning
+    # Use ThreadPoolExecutor for concurrent region scanning
     # Limit max_workers to 5 as specified for safe API usage
     with ThreadPoolExecutor(max_workers=min(max_workers, 5)) as executor:
-        # Submit all region scan tasks
+        # Submit all region scan tasks with VPC worker configuration
         future_to_region = {
-            executor.submit(_scan_single_region, region): region
+            executor.submit(_scan_single_region, region, vpc_max_workers): region
             for region in regions
         }
 
