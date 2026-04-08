@@ -39,3 +39,12 @@ tools:
       type: object
       properties: {}
     handler: auth_manager.show_auth_status
+
+  - name: secure_setup
+    description: |
+      Securely configure credentials without exposing them in command history.
+      RECOMMENDED: Use this instead of configure_auth to prevent credentials from appearing in logs.
+    input_schema:
+      type: object
+      properties: {}
+    handler: secure_runner.secure_set_env

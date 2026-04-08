@@ -64,6 +64,28 @@ Correct verification command:
 hcloud --help > /dev/null 2>&1 && echo "hcloud installed" || echo "hcloud not found"
 ```
 
+## Security Guidelines for Credentials
+
+When handling sensitive credentials (Access Keys, Secret Keys):
+
+1. **NEVER expose credentials in command lines**
+   - Avoid: `export HWCLOUD_ACCESS_KEY="secret"` in shared terminal
+   - This prevents credentials from appearing in shell history
+
+2. **Use interactive input for credentials**
+   - Use Python's `getpass` module for secure input
+   - Example: `getpass.getpass("Enter Secret Key: ")`
+
+3. **Use the provided secure runner**
+   ```bash
+   python skills/huaweicloud-core/auth-manager/secure_runner.py --setup
+   ```
+
+4. **Clear shell history after credential operations**
+   ```bash
+   history -c
+   ```
+
 ## File Structure Suggestion
 
 - Store code files in a dedicated `src` directory
