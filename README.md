@@ -89,6 +89,29 @@ Multi-Cloud Resource Manager provides comprehensive resource scanning capabiliti
   - Alibaba Cloud: aliyun
   - AWS: aws
 
+### Important: Use Read-Only Account with Minimum Permissions
+
+**⚠️ SECURITY WARNING ⚠️**
+
+This tool **MUST** use **read-only accounts** with minimum necessary permissions. **NEVER** use accounts with write/delete permissions:
+
+| Permission Level | Recommended | Risk Level | Description |
+|------------------|-------------|------------|-------------|
+| **Read-Only** | ✅ **REQUIRED** | Low | Can only view resources, no modification risk |
+| **Read-Write** | ❌ **FORBIDDEN** | Critical | Can modify/delete resources, high operational risk |
+
+**Why Read-Only Accounts?**
+- **Operational Safety**: Prevents accidental resource modification or deletion
+- **Security**: Even if AK/SK is leaked, attackers cannot damage your infrastructure
+- **Compliance**: Meets security audit requirements for scanning tools
+- **Least Privilege**: Follows security best practice of minimum necessary access
+
+**Dangers of Using Write-Enabled Accounts:**
+- Accidental resource deletion during scanning
+- Malicious resource manipulation if credentials are compromised
+- Compliance violations from excessive permissions
+- Operational disasters from misconfigured automation
+
 ### Installation
 
 1. **Clone this repository**
@@ -479,6 +502,389 @@ Configure hourly scans:
 - **[CLAUDE.md](./CLAUDE.md)** - Development guidelines and code specifications
 - **[CLAUDE.md](./CLAUDE.md)** - Development guidelines and code specifications
 
+## Required IAM Permissions & How to Apply
+
+This section details the **minimum read-only permissions** required for each cloud provider and how to apply through the web console.
+
+### Permission Overview
+
+| Cloud Provider | Account Type | Access Mode | Permission Level |
+|----------------|--------------|-------------|------------------|
+| **Huawei Cloud** | IAM User | Programmatic Access | Read-Only |
+| **Alibaba Cloud** | RAM User | Programmatic Access | Read-Only |
+| **AWS** | IAM User | Programmatic Access | Read-Only |
+
+---
+
+### Huawei Cloud Permissions
+
+#### Required Permissions List
+
+| Service | Permission | Purpose |
+|---------|------------|---------|
+| **VPC** | `vpc:vpcs:list` | List VPCs |
+| | `vpc:subnets:list` | List subnets |
+| | `vpc:securityGroups:list` | List security groups |
+| | `vpc:securityGroupRules:list` | List security group rules |
+| **ECS** | `ecs:servers:list` | List ECS instances |
+| | `ecs:serverVolumeAttachments:list` | List attached volumes |
+| | `ecs:serverInterfaces:list` | List network interfaces |
+| **OBS** | `obs:bucket:list` | List OBS buckets |
+| | `obs:bucket:getBucketAcl` | Get bucket ACL |
+| | `obs:bucket:getBucketPolicy` | Get bucket policy |
+| **EIP** | `vpc:publicIps:list` | List Elastic IPs |
+| **CES** | `ces:metrics:list` | List metrics |
+| | `ces:data:list` | Get metric data |
+| **CCE** | `cce:clusters:list` | List CCE clusters |
+| | `cce:nodes:list` | List CCE nodes |
+
+#### How to Apply (Huawei Cloud Console)
+
+**Step 1: Create IAM User**
+
+1. Login to [Huawei Cloud IAM Console](https://console.huaweicloud.com/iam/)
+2. In the left navigation menu, click **Users**
+3. Click **Create User** button
+4. Configure user details:
+   - **User Name**: `resource-scanner` (or your preferred name)
+   - **Credential Type**: Select **Programmatic access** only (do not enable console access)
+   - **Description**: `Read-only account for resource scanning tool`
+5. Click **Next**
+
+**Step 2: Assign Permissions**
+
+Option A - Use System Policy (Quick Setup):
+1. On the permissions page, switch to **Attach policies by policy**
+2. In the search box, type: `Tenant Guest`
+3. Check the box for **Tenant Guest** policy (provides read-only access to most services)
+4. Click **Next**
+
+Option B - Use Custom Policy (Fine-grained Control):
+1. Click **Create Policy** (if you don't have a custom policy yet)
+2. Select **JSON** tab and paste the following policy:
+
+```json
+{
+  "Version": "1.1",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "vpc:vpcs:list",
+        "vpc:subnets:list",
+        "vpc:securityGroups:list",
+        "vpc:securityGroupRules:list",
+        "ecs:servers:list",
+        "ecs:serverVolumeAttachments:list",
+        "ecs:serverInterfaces:list",
+        "obs:bucket:list",
+        "obs:bucket:getBucketAcl",
+        "obs:bucket:getBucketPolicy",
+        "vpc:publicIps:list",
+        "ces:metrics:list",
+        "ces:data:list",
+        "cce:clusters:list",
+        "cce:nodes:list"
+      ],
+      "Resource": ["*"]
+    }
+  ]
+}
+```
+
+3. Click **Check** to validate the policy
+4. Enter policy name: `ResourceScannerReadOnly`
+5. Click **OK** to create the policy
+6. Return to user creation and attach this custom policy
+
+**Step 3: Complete User Creation**
+
+1. Review the user configuration
+2. Click **Create User**
+3. **IMPORTANT**: On the success page, you will see:
+   - **Access Key ID** (e.g., `HWI...`)
+   - **Secret Access Key** (click **Download CSV** or copy immediately)
+4. **Save these credentials securely** - the Secret Key will NOT be shown again
+5. Store in a password manager or secure location
+
+**Step 4: (Optional) Assign to Multiple Projects**
+
+If you need to scan resources across multiple projects:
+
+1. Go to **Users** > Click on the user you created
+2. Click **Modify** in the **Project** section
+3. Select all projects that need to be scanned
+4. Ensure the read-only policy is applied to each project
+
+---
+
+### Alibaba Cloud Permissions
+
+#### Required Permissions List
+
+| Service | RAM Policy Name | Purpose |
+|---------|-----------------|---------|
+| **ECS** | `AliyunECSReadOnlyAccess` | Full ECS read access |
+| **VPC** | `AliyunVPCReadOnlyAccess` | Full VPC read access |
+| **OSS** | `AliyunOSSReadOnlyAccess` | Full OSS read access |
+| **EIP** | `AliyunEIPReadOnlyAccess` | Full EIP read access |
+| **CMS** | `AliyunCloudMonitorReadOnlyAccess` | CloudMonitor read access |
+| **RDS** | `AliyunRDSReadOnlyAccess` | RDS read access (optional) |
+| **SLB** | `AliyunSLBReadOnlyAccess` | SLB read access (optional) |
+
+#### Custom RAM Policy (JSON)
+
+If you need fine-grained control instead of system policies:
+
+```json
+{
+  "Version": "1",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "ecs:Describe*",
+        "vpc:Describe*",
+        "oss:GetBucket*",
+        "oss:ListBucket*",
+        "eip:Describe*",
+        "cms:Describe*",
+        "cms:Query*"
+      ],
+      "Resource": "*"
+    }
+  ]
+}
+```
+
+#### How to Apply (Alibaba Cloud Console)
+
+**Step 1: Create RAM User**
+
+1. Login to [Alibaba Cloud RAM Console](https://ram.console.aliyun.com/)
+2. In the left navigation menu, click **Users** under **Identities**
+3. Click **Create User** button
+4. Configure user details:
+   - **User Account Information**:
+     - **Logon Name**: `resource-scanner`
+     - **Display Name**: `Resource Scanner`
+   - **Access Mode**: Check **OpenAPI Access** (Programmatic access)
+   - **Console Access**: Do NOT enable (keep unchecked for security)
+5. Click **OK**
+
+**Step 2: Assign Permissions**
+
+Option A - Use System Policies (Quick Setup):
+
+1. On the success page, click **Add Permissions** (or go to Users > click user name > Permissions > Add Permissions)
+2. Select **System Policy** tab
+3. In the search box, search for and select these policies one by one:
+   | Policy Name | Purpose |
+   |-------------|---------|
+   | `AliyunECSReadOnlyAccess` | ECS read access |
+   | `AliyunVPCReadOnlyAccess` | VPC read access |
+   | `AliyunOSSReadOnlyAccess` | OSS read access |
+   | `AliyunEIPReadOnlyAccess` | Elastic IP read access |
+   | `AliyunCloudMonitorReadOnlyAccess` | CloudMonitor metrics |
+4. Click **OK** to confirm
+
+Option B - Use Custom Policy:
+
+1. Before adding permissions, go to **Policies** > **Create Policy**
+2. Select **Script** configuration mode
+3. Paste the custom JSON policy shown above
+4. Enter policy name: `ResourceScannerReadOnly`
+5. Click **OK**
+6. Return to user permissions and attach this custom policy
+
+**Step 3: Create AccessKey**
+
+1. Go to **Users** > Click on `resource-scanner` user name
+2. Click **Create AccessKey** in the **User AccessKey Information** section
+3. **Security Verification**: Complete SMS or email verification as required
+4. **IMPORTANT**: On the success page, you will see:
+   - **AccessKey ID** (e.g., `LTAI...`)
+   - **AccessKey Secret** (click **Copy** or **Download CSV File**)
+5. **Save these credentials immediately** - the Secret will NOT be shown again
+6. Store securely in a password manager or secure vault
+
+**Step 4: (Optional) Configure MFA for Account Security**
+
+Even for read-only accounts, consider enabling MFA:
+
+1. In user details page, click **Enable Virtual MFA Device**
+2. Follow the prompts to bind an MFA device
+3. Note: MFA may affect programmatic access in some scenarios
+
+---
+
+### AWS Permissions
+
+#### Required Permissions List
+
+| Service | Permission | Purpose |
+|---------|------------|---------|
+| **EC2** | `ec2:DescribeInstances` | List EC2 instances |
+| | `ec2:DescribeVpcs` | List VPCs |
+| | `ec2:DescribeSubnets` | List subnets |
+| | `ec2:DescribeSecurityGroups` | List security groups |
+| | `ec2:DescribeSecurityGroupRules` | List security group rules |
+| | `ec2:DescribeAddresses` | List Elastic IPs |
+| | `ec2:DescribeNetworkInterfaces` | List ENIs |
+| **S3** | `s3:GetBucketAcl` | Get bucket ACL |
+| | `s3:GetBucketPolicy` | Get bucket policy |
+| | `s3:GetBucketPublicAccessBlock` | Check public access settings |
+| | `s3:ListAllMyBuckets` | List all buckets |
+| | `s3:ListBucket` | List bucket contents |
+| **CloudWatch** | `cloudwatch:GetMetricData` | Get metrics |
+| | `cloudwatch:ListMetrics` | List metrics |
+
+#### IAM Policy Document (JSON)
+
+If creating a custom policy, use this JSON:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "EC2ReadOnly",
+      "Effect": "Allow",
+      "Action": [
+        "ec2:DescribeInstances",
+        "ec2:DescribeVpcs",
+        "ec2:DescribeSubnets",
+        "ec2:DescribeSecurityGroups",
+        "ec2:DescribeSecurityGroupRules",
+        "ec2:DescribeAddresses",
+        "ec2:DescribeNetworkInterfaces"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "S3ReadOnly",
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetBucketAcl",
+        "s3:GetBucketPolicy",
+        "s3:GetBucketPublicAccessBlock",
+        "s3:ListAllMyBuckets",
+        "s3:ListBucket"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "CloudWatchReadOnly",
+      "Effect": "Allow",
+      "Action": [
+        "cloudwatch:GetMetricData",
+        "cloudwatch:ListMetrics"
+      ],
+      "Resource": "*"
+    }
+  ]
+}
+```
+
+#### How to Apply (AWS Console)
+
+**Step 1: Create IAM User**
+
+1. Login to [AWS IAM Console](https://console.aws.amazon.com/iam/)
+2. In the left navigation menu, click **Users**
+3. Click **Add users** button
+4. Configure user details:
+   - **User name**: `resource-scanner`
+   - **Select AWS credential type**: Check **Access key - Programmatic access**
+   - Do NOT enable **Password - AWS Management Console access**
+5. Click **Next: Permissions**
+
+**Step 2: Assign Permissions**
+
+Option A - Use AWS Managed Policies (Quick Setup):
+
+1. On the permissions page, select **Attach existing policies directly**
+2. In the search filter, search for and check these policies:
+   | Policy Name | Purpose |
+   |-------------|---------|
+   | `AmazonEC2ReadOnlyAccess` | EC2 read access |
+   | `AmazonS3ReadOnlyAccess` | S3 read access |
+   | `CloudWatchReadOnlyAccess` | CloudWatch metrics |
+3. Ensure all three policies are checked
+4. Click **Next: Tags**
+
+Option B - Use Custom Policy (Fine-grained Control):
+
+1. Before creating the user, go to **Policies** > **Create policy**
+2. Click **JSON** tab
+3. Paste the custom JSON policy shown above
+4. Click **Review policy**
+5. Enter policy name: `ResourceScannerReadOnly`
+6. Click **Create policy**
+7. Return to user creation and attach this custom policy
+
+**Step 3: Add Tags (Optional)**
+
+1. Add metadata tags for organization:
+   - Key: `Project`, Value: `ResourceScanner`
+   - Key: `Environment`, Value: `Production`
+2. Click **Next: Review**
+
+**Step 4: Review and Create**
+
+1. Review the user configuration:
+   - User name: `resource-scanner`
+   - AWS access type: `Programmatic access`
+   - Permissions: The read-only policies selected
+2. Click **Create user**
+
+**Step 5: Save Credentials**
+
+1. **IMPORTANT**: On the success page, you will see:
+   - **Access key ID** (e.g., `AKIA...`)
+   - **Secret access key** (click **Show** to reveal)
+2. **Save these credentials immediately** - the Secret Key will NOT be shown again
+3. Options to save:
+   - Click **Download .csv** to download a CSV file
+   - Click **Copy** to copy to clipboard
+   - Store in a secure password manager
+4. Click **Close**
+
+**Step 6: (Optional) Configure Additional Security**
+
+1. Return to the user list and click on `resource-scanner`
+2. Under **Security credentials** tab:
+   - **Sign-in credentials**: Ensure console access is disabled
+   - **Assigned MFA device**: Consider enabling MFA for extra security (may affect some programmatic scenarios)
+   - **Access keys**: You can create a second access key for rotation purposes
+
+**Step 7: (Optional) Cross-Account Access**
+
+If scanning multiple AWS accounts:
+
+1. In the target account, create a role instead of a user
+2. Use the following trust relationship policy:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "AWS": "arn:aws:iam::SCANNER_ACCOUNT_ID:root"
+      },
+      "Action": "sts:AssumeRole"
+    }
+  ]
+}
+```
+
+3. Attach the same read-only permissions to this role
+4. In the scanner account, grant the user permission to assume this role
+
+---
+
 ## Security Best Practices
 
 ### Credential Security
@@ -487,29 +893,8 @@ Configure hourly scans:
 - Use interactive configuration methods when available
 - Set environment variable file permissions to `600`
 - Rotate credentials every 90 days
+- **Use read-only accounts with minimum permissions - NEVER use write-enabled accounts**
 - Use IAM/sub-accounts with minimal permissions
-
-### Required IAM Permissions
-
-Each cloud provider requires read-only permissions:
-
-**Huawei Cloud:**
-- `vpc:vpcs:list`, `vpc:subnets:list`, `vpc:securityGroups:list`
-- `ecs:servers:list`, `ecs:serverVolumeAttachments:list`
-- `obs:bucket:list`, `obs:bucket:getBucketAcl`
-- `ces:metrics:list`, `ces:data:list`
-
-**Alibaba Cloud:**
-- `AliyunECSReadOnlyAccess`
-- `AliyunVPCReadOnlyAccess`
-- `AliyunOSSReadOnlyAccess`
-- `AliyunEIPReadOnlyAccess`
-- `AliyunCloudMonitorReadOnlyAccess`
-
-**AWS:**
-- `ec2:Describe*`
-- `s3:Get*`, `s3:List*`
-- `cloudwatch:Get*`, `cloudwatch:List*`
 
 ### Operational Security
 
