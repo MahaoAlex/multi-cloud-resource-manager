@@ -92,3 +92,11 @@ When handling sensitive credentials (Access Keys, Secret Keys):
 - Place documentation files in the root directory as `.md` files
 - Use consistent naming conventions for all files
 - Maintain version control for code and documentation updates
+
+## Git Commit Guidelines
+
+When creating git commits:
+
+1. **DO NOT add Claude's co-author information**
+   - Do not include `Co-Authored-By: Claude ...` in commit messages
+   - Keep commit messages clean and focused on the actual changes
