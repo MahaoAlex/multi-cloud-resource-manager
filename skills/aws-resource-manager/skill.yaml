@@ -139,9 +139,3 @@ tools:
           type: string
           description: Type of resources to check
     handler: main.run_custom_rule
-
-dependencies:
-  - name: proxy-injection
-    path: ../huaweicloud-core/proxy-injection
-  - name: auth-manager
-    path: ../huaweicloud-core/auth-manager
