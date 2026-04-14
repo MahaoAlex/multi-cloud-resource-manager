@@ -1,5 +1,5 @@
 name: aliyun-resource-manager
-description: Unified Alibaba Cloud resource management tool for VPC inventory, security scanning, OSS scanning, ECS monitoring, EIP scanning, and compliance checking across multiple regions.
+description: Unified Alibaba Cloud resource management tool for VPC inventory, security scanning, OSS scanning, ECS monitoring, EIP scanning, ACK cluster scanning, and compliance checking across multiple regions.
 version: 1.0.0
 
 tools:
@@ -80,6 +80,21 @@ tools:
             type: string
           description: List of regions to scan
     handler: main.scan_eips
+
+  - name: scan_ack
+    description: Scan ACK clusters for low utilization and empty clusters
+    input_schema:
+      type: object
+      properties:
+        regions:
+          type: array
+          items:
+            type: string
+          description: List of regions to scan
+        node_threshold:
+          type: integer
+          description: Node count threshold for low usage warning (default 2)
+    handler: main.scan_ack
 
   - name: full_scan
     description: Perform complete resource scan across all categories

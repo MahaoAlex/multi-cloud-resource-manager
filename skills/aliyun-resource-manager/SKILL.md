@@ -2,7 +2,7 @@
 
 ## Description
 
-Unified Alibaba Cloud resource management tool for VPC inventory, security scanning, OSS scanning, ECS monitoring, EIP scanning, and compliance checking across multiple regions.
+Unified Alibaba Cloud resource management tool for VPC inventory, security scanning, OSS scanning, ECS monitoring, EIP scanning, ACK cluster scanning, and compliance checking across multiple regions.
 
 ## Tools Reference
 
@@ -40,6 +40,13 @@ Detect unattached Elastic IPs.
 
 **Parameters:**
 - `regions` (array): List of regions to scan
+
+### scan_ack
+Scan ACK (Container Service for Kubernetes) clusters for low utilization and empty clusters.
+
+**Parameters:**
+- `regions` (array): List of regions to scan
+- `node_threshold` (integer): Node count threshold for low usage warning (default: 2)
 
 ### full_scan
 Perform complete resource scan across all categories.
@@ -82,6 +89,11 @@ Run a custom rule against resources.
 /aliyun-resource-manager scan_security --regions=["cn-hangzhou", "cn-shanghai"]
 ```
 
+### ACK Scan
+```
+/aliyun-resource-manager scan_ack --regions=["cn-hangzhou"]
+```
+
 ### Full Resource Scan
 ```
 /aliyun-resource-manager full_scan --regions=["cn-hangzhou"] --scan_type="manual"
@@ -115,6 +127,7 @@ aliyun-resource-manager/
     ├── oss_scanner.py
     ├── ecs_monitor.py
     ├── eip_scanner.py
+    ├── ack_scanner.py
     ├── report_generator.py
     └── rule_engine.py
 ```

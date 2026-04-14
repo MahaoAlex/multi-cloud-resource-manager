@@ -103,6 +103,7 @@ class ReportGenerator:
                 "security_issues": data.get("security_issues", []),
                 "oss_issues": data.get("oss_issues", []),
                 "ecs_issues": data.get("ecs_issues", []),
+                "ack_issues": data.get("ack_issues", []),
                 "unattached_eips": data.get("unattached_eips", []),
                 "naming_violations": data.get("naming_violations", [])
             },
@@ -142,6 +143,8 @@ class ReportGenerator:
         lines.append(f"- **Low Utilization ECS:** {summary.get('low_utilization_ecs', 0)}")
         lines.append(f"- **Unattached EIPs:** {summary.get('unattached_eips', 0)}")
         lines.append(f"- **Naming Violations:** {summary.get('naming_violations', 0)}")
+        lines.append(f"- **ACK Clusters Low Utilization:** {summary.get('ack_clusters_low_utilization', 0)}")
+        lines.append(f"- **ACK Empty Clusters:** {summary.get('ack_empty_clusters', 0)}")
         lines.append("")
 
         # Region Summary
@@ -152,6 +155,7 @@ class ReportGenerator:
             lines.append(f"- VPCs: {region_summary.get('vpcs', 0)}")
             lines.append(f"- Security Issues: {region_summary.get('security_issues', 0)}")
             lines.append(f"- ECS Issues: {region_summary.get('ecs_issues', 0)}")
+            lines.append(f"- ACK Issues: {region_summary.get('ack_issues', 0)}")
             lines.append("")
 
         # Action Items (High Priority)
@@ -253,6 +257,21 @@ class ReportGenerator:
                     lines.append(f"  - Risk Level: {issue.get('risk_level', 'unknown')}")
                     lines.append("")
 
+            # ACK Clusters
+            ack = data.get("ack_issues", [])
+            if ack:
+                lines.append("### ACK Clusters with Issues")
+                lines.append("")
+                lines.append("| Cluster ID | Name | Region | Nodes | Status |")
+                lines.append("|------------|------|--------|-------|--------|")
+                for cluster in ack:
+                    lines.append(f"| {cluster.get('cluster_id', 'N/A')} | "
+                               f"{cluster.get('cluster_name', 'N/A')} | "
+                               f"{cluster.get('region', 'N/A')} | "
+                               f"{cluster.get('node_count', 0)} | "
+                               f"{cluster.get('status', 'unknown')} |")
+                lines.append("")
+
         # Footer
         lines.append("---")
         lines.append("")
@@ -338,6 +357,19 @@ class ReportGenerator:
                 "recommendation": "set_bucket_private",
                 "owner": "unknown"
             })
+
+        # ACK clusters
+        for cluster in data.get("ack_issues", []):
+            for issue in cluster.get("issues", []):
+                action_items.append({
+                    "resource_type": "ack_cluster",
+                    "resource_id": cluster.get("cluster_id"),
+                    "region": cluster.get("region"),
+                    "severity": issue.get("severity", "warning"),
+                    "issue": issue.get("details", {}).get("message", "ACK cluster issue"),
+                    "recommendation": "review_cluster_utilization",
+                    "owner": "unknown"
+                })
 
         # Sort by severity
         severity_order = {"critical": 0, "high": 1, "warning": 2, "info": 3}

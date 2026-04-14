@@ -30,6 +30,7 @@ from ecs_monitor import monitor_ecs_instances
 from eip_scanner import scan_unattached_eips
 from rds_scanner import scan_rds_instances
 from slb_scanner import scan_slb_instances
+from ack_scanner import scan_ack_clusters
 from report_generator import ReportGenerator
 from rule_engine import RuleEngine
 
@@ -277,6 +278,32 @@ def scan_eips(regions: Optional[List[str]] = None) -> List[Dict[str, Any]]:
     return eips
 
 
+def scan_ack(
+    regions: Optional[List[str]] = None,
+    node_threshold: int = 2
+) -> List[Dict[str, Any]]:
+    """
+    Scan ACK clusters for low utilization.
+    Identifies clusters with no nodes or fewer than threshold nodes.
+
+    Args:
+        regions: List of regions to scan
+        node_threshold: Node count threshold for low usage warning
+
+    Returns:
+        List of ACK clusters with utilization issues
+    """
+    if regions is None:
+        regions = get_regions_from_env()
+
+    logger.info(f"Starting ACK scan for {len(regions)} region(s)")
+
+    issues = scan_ack_clusters(regions, node_threshold=node_threshold)
+
+    logger.info(f"ACK scan complete. Found {len(issues)} cluster(s) with low utilization")
+    return issues
+
+
 def scan_single_region(region: str) -> Dict[str, Any]:
     """
     Scan a single region for all resource types.
@@ -295,6 +322,7 @@ def scan_single_region(region: str) -> Dict[str, Any]:
         "ecs_issues": [],
         "rds_issues": [],
         "slb_issues": [],
+        "ack_issues": [],
         "unattached_eips": [],
         "naming_violations": [],
         "error": None
@@ -342,6 +370,13 @@ def scan_single_region(region: str) -> Dict[str, Any]:
             logger.warning(f"SLB scan failed for region {region}: {e}")
             result["slb_issues"] = []
 
+        # ACK scan (with retry)
+        try:
+            result["ack_issues"] = scan_ack_clusters([region], node_threshold=2)
+        except Exception as e:
+            logger.warning(f"ACK scan failed for region {region}: {e}")
+            result["ack_issues"] = []
+
     except Exception as e:
         logger.error(f"Error scanning region {region}: {e}")
         result["error"] = str(e)
@@ -387,6 +422,7 @@ def full_scan(
         "ecs_issues": [],
         "rds_issues": [],
         "slb_issues": [],
+        "ack_issues": [],
         "unattached_eips": [],
         "naming_violations": [],
         "failed_regions": []
@@ -418,6 +454,7 @@ def full_scan(
                 all_results["ecs_issues"].extend(region_result["ecs_issues"])
                 all_results["rds_issues"].extend(region_result["rds_issues"])
                 all_results["slb_issues"].extend(region_result["slb_issues"])
+                all_results["ack_issues"].extend(region_result["ack_issues"])
                 all_results["unattached_eips"].extend(region_result["unattached_eips"])
                 all_results["naming_violations"].extend(region_result["naming_violations"])
 
@@ -429,6 +466,7 @@ def full_scan(
                     "ecs_issues": len(region_result["ecs_issues"]),
                     "rds_issues": len(region_result["rds_issues"]),
                     "slb_issues": len(region_result["slb_issues"]),
+                    "ack_issues": len(region_result["ack_issues"]),
                     "unattached_eips": len(region_result["unattached_eips"])
                 }
 
@@ -456,7 +494,9 @@ def full_scan(
         "unattached_eips": len(all_results["unattached_eips"]),
         "naming_violations": len(all_results["naming_violations"]),
         "rds_issues": len(all_results["rds_issues"]),
-        "slb_issues": len(all_results["slb_issues"])
+        "slb_issues": len(all_results["slb_issues"]),
+        "ack_clusters_low_utilization": len(all_results["ack_issues"]),
+        "ack_empty_clusters": len([c for c in all_results["ack_issues"] if c.get("node_count", 0) == 0])
     }
 
     all_results["duration_seconds"] = int(time.time() - start_time)
@@ -543,7 +583,7 @@ def main():
     parser.add_argument("--regions", help="Comma-separated regions or 'all'")
     parser.add_argument("--output", default="./reports", help="Output directory")
     parser.add_argument("--mode", choices=["manual", "scheduled"], default="manual")
-    parser.add_argument("--scan", choices=["vpc", "security", "oss", "ecs", "eip", "full"], default="full")
+    parser.add_argument("--scan", choices=["vpc", "security", "oss", "ecs", "eip", "ack", "full"], default="full")
     parser.add_argument("--max-workers", type=int, default=5, help="Maximum concurrent region scans (default: 5)")
 
     args = parser.parse_args()
@@ -565,6 +605,8 @@ def main():
         results = scan_ecs()
     elif args.scan == "eip":
         results = scan_eips()
+    elif args.scan == "ack":
+        results = scan_ack()
 
     print(json.dumps(results, indent=2, ensure_ascii=False))
 
